@@ -613,11 +613,32 @@ function startRevealPoll(qi){
 
 function startR2Timer(qi,secs){
   timerTotal=secs;
+  var timerEnd=Date.now()+(secs*1000);
+  // Show on producer immediately
   var el=document.getElementById('p-timer');
   if(el) el.innerHTML=timerHTML(secs,secs);
-  startCountdown(secs,function(s){updateTimer(s,timerTotal);},function(){
+  // Write timerEnd to Supabase so all screens get it
+  readState(function(st){
+    if(!st)return;
+    st.timerEnd=timerEnd;
+    st.timerTotal=secs;
+    st.timerDone=false;
+    writeState(st,function(ok){
+      console.log('Timer written to Supabase:', ok, 'timerEnd:', timerEnd);
+    });
+  });
+  // Run local countdown on producer
+  startCountdown(secs,function(remaining){
+    updateTimer(remaining,timerTotal);
+  },function(){
     var el=document.getElementById('p-timer');
-    if(el) el.innerHTML='<div style="text-align:center;font-size:28px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;margin-bottom:12px;">TIME\'S UP</div>';
+    if(el) el.innerHTML='<div style="text-align:center;font-size:28px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;margin-bottom:12px;">TIMES UP</div>';
+    // Mark done in Supabase
+    readState(function(st){
+      if(!st)return;
+      st.timerDone=true;
+      writeState(st,function(){});
+    });
   });
 }
 
