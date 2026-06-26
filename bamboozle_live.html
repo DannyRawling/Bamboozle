@@ -349,10 +349,17 @@ function buildQuestions(qIdx,aIdx,rIdx,r1Idx,rFilter){
   allRows.slice(1).forEach(function(row){
     var q=String(row[qIdx]||'').trim();
     var a=String(row[aIdx]||'').trim();
-    if(!q||!a)return;
+    if(!q)return; // skip rows with no question
     var rv=!isNaN(rIdx)?String(row[rIdx]||'').trim():'';
     if(rFilter&&rv!==rFilter)return;
-    var entry={q:q,correct:a,round:rv,mode:detectMode(rv)};
+    var detectedMode=detectMode(rv);
+    // For Round 4, if answer is blank use the last word of the statement as the correct word
+    if(!a&&detectedMode==='r4'){
+      var words=q.trim().split(/\s+/);
+      a=words[words.length-1];
+    }
+    if(!a)return; // still blank after fallback - skip
+    var entry={q:q,correct:a,round:rv,mode:detectedMode};
     if(!isNaN(r1Idx)){
       var raw=String(row[r1Idx]||'').trim();
       if(raw){
