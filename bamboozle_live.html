@@ -814,12 +814,41 @@ function renderBamboozlerWaiting(){
     +'</div>';
 }
 
+var currentBamPhase=null;
 function renderBamboozlerForState(s){
-  if(!s||s.phase==='idle'||s.phase==='r1'){renderBamboozlerWaiting();return;}
+  if(!s||s.phase==='idle'||s.phase==='r1'){
+    currentBamPhase=null;
+    renderBamboozlerWaiting();return;
+  }
+  // If phase hasn't changed, just update the timer in place rather than re-rendering
+  if(s.phase===currentBamPhase&&s.phase==='r2_cued'){
+    injectTimerIntoBam(s);return;
+  }
+  currentBamPhase=s.phase;
   if(s.phase==='r2_cued') renderBamboozlerR2(s);
   else if(s.phase==='r4_cued') renderBamboozlerR4(s);
   else if(s.phase==='final_entry') renderBamboozlerFinal(s);
   else renderBamboozlerWaiting();
+}
+
+function injectTimerIntoBam(s){
+  if(!s.timerEnd)return;
+  var el=document.getElementById('remote-timer');
+  if(!el){
+    // Timer div doesn't exist yet — insert it before the section label
+    var body=document.getElementById('b-body');
+    if(!body)return;
+    var sectionLabel=body.querySelector('.section-label');
+    if(sectionLabel){
+      var div=document.createElement('div');
+      div.id='remote-timer';
+      div.style.marginBottom='12px';
+      div.innerHTML=buildTimerHTML(s);
+      sectionLabel.parentNode.insertBefore(div,sectionLabel);
+      tickRemoteTimer('remote-timer',s);
+    }
+  }
+  // If already exists, tickRemoteTimer handles updates
 }
 
 // Spell check via Claude API
@@ -849,7 +878,7 @@ function renderBamboozlerR2(s){
     +'<div class="qtext">'+esc(s.question)+'</div>'
     +'<div class="correct"><span>Correct: </span>'+esc(s.correct)+'</div>'
     +'</div>'
-    +(s.timerEnd?'<div id="remote-timer" style="margin-bottom:12px;">'+buildTimerHTML(s)+'</div>':'')
+    +'<div id="remote-timer" style="margin-bottom:12px;"></div>'
     +'<div class="section-label">Your two Bamboozle answers</div>'
     +'<div class="bam-label">Bamboozle 1</div>'
     +'<input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off">'
@@ -867,7 +896,7 @@ function renderBamboozlerR2(s){
   document.getElementById('bam1').addEventListener('input',renderOrderOpts);
   document.getElementById('bam2').addEventListener('input',renderOrderOpts);
   // Start ticking immediately if timer is active
-  if(s.timerEnd) tickRemoteTimer('remote-timer', s);
+  if(s.timerEnd) { injectTimerIntoBam(s); tickRemoteTimer('remote-timer',s); }
 }
 
 
@@ -1130,7 +1159,15 @@ function renderAudience(s){
     wait.style.display='none'; main.style.display='flex'; done.style.display='none';
     if(s.phase==='r1') renderAudR1(s);
     else if(s.phase==='r2') renderAudR2(s);
-    else if(s.phase==='r2_cued') renderAudCued(s);
+    else if(s.phase==='r2_cued'){
+      // If timer just appeared, inject it without re-rendering everything
+      var existingTimer=document.getElementById('aud-remote-timer');
+      if(existingTimer&&s.timerEnd){
+        tickRemoteTimer('aud-remote-timer',s);
+      } else {
+        renderAudCued(s);
+      }
+    }
     else if(s.phase==='r4'||s.phase==='r4_cued') renderAudR4(s);
     else renderAudFinal(s);
     return;
