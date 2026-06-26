@@ -855,8 +855,12 @@ function renderBamboozlerForState(s){
 function injectTimerIntoBam(s){
   if(!s.timerEnd)return;
   var el=document.getElementById('remote-timer');
-  if(!el){
-    // Timer div doesn't exist yet — insert it before the section label
+  if(el){
+    // Div exists — update content and start ticking
+    el.innerHTML=buildTimerHTML(s);
+    tickRemoteTimer('remote-timer',s);
+  } else {
+    // Div missing — insert before section label
     var body=document.getElementById('b-body');
     if(!body)return;
     var sectionLabel=body.querySelector('.section-label');
@@ -869,7 +873,6 @@ function injectTimerIntoBam(s){
       tickRemoteTimer('remote-timer',s);
     }
   }
-  // If already exists, tickRemoteTimer handles updates
 }
 
 // Spell check via Claude API
@@ -917,7 +920,7 @@ function renderBamboozlerR2(s){
   document.getElementById('bam1').addEventListener('input',renderOrderOpts);
   document.getElementById('bam2').addEventListener('input',renderOrderOpts);
   // Start ticking immediately if timer is active
-  if(s.timerEnd) { injectTimerIntoBam(s); tickRemoteTimer('remote-timer',s); }
+  if(s.timerEnd) { injectTimerIntoBam(s); }
 }
 
 
@@ -1181,13 +1184,19 @@ function renderAudience(s){
     if(s.phase==='r1') renderAudR1(s);
     else if(s.phase==='r2') renderAudR2(s);
     else if(s.phase==='r2_cued'){
-      // If timer just appeared, inject it without re-rendering everything
       var existingTimer=document.getElementById('aud-remote-timer');
-      if(existingTimer&&s.timerEnd){
+      if(s.timerEnd&&existingTimer){
+        // Timer div exists - just update it
+        existingTimer.innerHTML=buildTimerHTML(s);
         tickRemoteTimer('aud-remote-timer',s);
-      } else {
+      } else if(s.timerEnd&&!existingTimer){
+        // Timer started but no div yet - re-render to show it
+        renderAudCued(s);
+      } else if(!existingTimer){
+        // First render
         renderAudCued(s);
       }
+      // else: no timer and div exists - leave as is
     }
     else if(s.phase==='r4'||s.phase==='r4_cued') renderAudR4(s);
     else renderAudFinal(s);
