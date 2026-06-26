@@ -730,7 +730,7 @@ function startFinalReveal(qi){
     pool.push(correct);
     for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
     var cp=pool.indexOf(correct);
-    var state={phase:'final_reveal',qIdx:qi,question:questions[qi].q,options:pool,correctPos:cp,reveal:0,total:questions.length};
+    var state={phase:'final_reveal',qIdx:qi,question:questions[qi].q,options:pool,correctPos:cp,reveal:0,struckFinal:[],total:questions.length};
     writeState(state,function(){
       document.getElementById('final-reveal-btn').style.display='none';
       renderFinalRevealControls(state);
@@ -1130,6 +1130,18 @@ function renderAudR1(s){
   document.getElementById('aud-footer').textContent=revealed?'\u2605 Correct answer revealed!':'Click an answer to strike it out.';
 }
 
+function audFinalClick(i){
+  readState(function(s){
+    if(!s||s.phase!=='final_reveal')return;
+    var struck=(s.struckFinal||[]).slice();
+    var idx=struck.indexOf(i);
+    if(idx!==-1) struck.splice(idx,1); // toggle off
+    else struck.push(i);               // toggle on
+    s.struckFinal=struck;
+    writeState(s,function(){renderAudFinal(s);lastHash=JSON.stringify(s);});
+  });
+}
+
 function audR1Click(i){
   readState(function(s){
     if(!s||s.phase!=='r1'||s.revealed)return;
@@ -1165,10 +1177,24 @@ function renderAudR4(s){
     return;
   }
   setAudHeader('Round 4 — Question '+(s.qIdx+1)+' of '+s.total,'');
+  // Build the display statement: stem + correct last word highlighted
+  var stmt=s.fullStatement||s.question||'';
+  var lastSpace=stmt.lastIndexOf(' ');
+  var stem=lastSpace>=0?stmt.substring(0,lastSpace+1):stmt+' ';
+  var correctWord=s.correctWord||s.correct||'';
+  // On reveal show full correct statement with last word in gold
+  // Before reveal show the delivered statement (may be a bamboozle)
+  var displayHTML;
+  if(s.revealed){
+    displayHTML='<span style="color:var(--white);">'+esc(stem)+'</span>'
+      +'<span style="color:var(--gold);text-decoration:underline;font-weight:900;">'+esc(correctWord)+'</span>';
+  } else {
+    displayHTML='<span style="color:var(--white);">'+esc(s.statement)+'</span>';
+  }
   document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
   document.getElementById('aud-opts').innerHTML=
     '<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:clamp(28px,5vw,56px) clamp(20px,4vw,48px);">'
-    +'<div style="font-size:clamp(20px,3.5vw,38px);color:var(--white);line-height:1.5;text-align:center;margin-bottom:clamp(16px,3vw,32px);">'+esc(s.statement)+'</div>'
+    +'<div style="font-size:clamp(20px,3.5vw,38px);color:var(--white);line-height:1.5;text-align:center;margin-bottom:clamp(16px,3vw,32px);">'+displayHTML+'</div>'
     +(!s.revealed
       ?'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%;max-width:560px;">'
        +'<div style="background:#001800;border:3px solid #00AA00;border-radius:12px;padding:18px;text-align:center;"><div style="font-size:clamp(16px,2.5vw,26px);font-weight:900;color:#00CC44;">TRUE</div></div>'
