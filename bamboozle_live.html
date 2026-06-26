@@ -1133,10 +1133,6 @@ function renderAudR1(s){
 function audFinalClick(i){
   readState(function(s){
     if(!s||s.phase!=='final_reveal')return;
-    var rev=s.reveal||0;
-    var n=s.options.length;
-    // Only allow striking revealed, non-correct answers before correct is shown
-    if(rev<=i||rev>n||i===s.correctPos)return;
     var struck=(s.struckFinal||[]).slice();
     var pos=struck.indexOf(i);
     if(pos!==-1) struck.splice(pos,1);
@@ -1146,13 +1142,7 @@ function audFinalClick(i){
   });
 }
 
-// Event delegation for final clicks - attached once after DOM ready
-document.addEventListener('click',function(e){
-  var cell=e.target.closest('.final-opt-cell');
-  if(!cell)return;
-  var i=parseInt(cell.dataset.optIdx);
-  if(!isNaN(i)) audFinalClick(i);
-});
+
 
 function audR1Click(i){
   readState(function(s){
@@ -1223,14 +1213,21 @@ function renderAudR4(s){
 function renderAudFinal(s){
   setAudHeader('The Final \u2014 Question '+(s.qIdx+1),s.question);
   var rev=s.reveal||0,n=s.options.length;
+  var struck=s.struckFinal||[];
   var cols=n<=3?3:n<=4?4:3;
   document.getElementById('aud-opts').style.gridTemplateColumns='repeat('+cols+',1fr)';
   var labels=['A','B','C','D','E','F'];
   var correctRevealed=rev>n;
   document.getElementById('aud-opts').innerHTML=s.options.map(function(opt,i){
-    var shown=rev>i,isCorrect=correctRevealed&&i===s.correctPos;
-    var cls=isCorrect?'correct':shown?'shown':'blank';
-    return '<div class="opt-cell '+cls+'"><div class="opt-letter">'+labels[i]+'</div><div class="opt-text" style="font-size:clamp(12px,2vw,20px);">'+(shown?esc(opt):'')+'</div></div>';
+    var shown=rev>i;
+    var isCorrect=correctRevealed&&i===s.correctPos;
+    var isStruck=struck.indexOf(i)!==-1&&!isCorrect;
+    var clickable=shown&&!correctRevealed;
+    var cls=isCorrect?'correct':isStruck?'struck':shown?'shown':'blank';
+    return '<div class="opt-cell '+cls+'" '+(clickable?'onclick="audFinalClick('+i+')"':'')+' style="cursor:'+(clickable?'pointer':'default')+';">'
+      +'<div class="opt-letter">'+labels[i]+'</div>'
+      +'<div class="opt-text" style="font-size:clamp(12px,2vw,20px);">'+(shown?esc(opt):'')+'</div>'
+      +'</div>';
   }).join('');
   document.getElementById('aud-footer').innerHTML=rev===0?'<span class="pulsing">The Bamboozles are coming\u2026</span>':rev<=n?rev+' of '+n+' revealed':'\u2605 Correct answer revealed!';
 }
