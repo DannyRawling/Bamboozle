@@ -777,25 +777,33 @@ function startBamboozlerPoll(){
   },1200);
 }
 
-// Shows a live countdown driven by timerEnd timestamp in state
-// Works on any screen - just needs the state object
-function updateRemoteTimer(s){
-  if(!s||!s.timerEnd)return;
-  var el=document.getElementById('remote-timer');
-  if(!el)return;
-  if(s.timerDone){
-    el.innerHTML='<div style="text-align:center;padding:12px 0;font-size:28px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
-    return;
-  }
+function buildTimerHTML(s){
+  if(!s||!s.timerEnd) return '';
+  if(s.timerDone) return '<div style="text-align:center;padding:8px 0;font-size:36px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
   var remaining=Math.max(0,Math.round((s.timerEnd-Date.now())/1000));
   var total=s.timerTotal||20;
   var pct=Math.max(0,remaining/total);
   var col=remaining<=5?'#FF3333':remaining<=10?'#FF8800':'var(--cyan)';
-  el.innerHTML='<div style="text-align:center;padding:8px 0;">'
-    +'<div style="font-size:48px;font-weight:900;color:'+col+';font-family:Arial,sans-serif;line-height:1;transition:color 0.5s;">'+remaining+'</div>'
-    +'<div style="height:6px;background:#1A0030;border-radius:3px;margin:8px 0;overflow:hidden;">'
-    +'<div style="height:100%;width:'+(pct*100)+'%;background:'+col+';border-radius:3px;transition:background 0.5s;"></div>'
+  return '<div style="text-align:center;padding:8px 0;">'
+    +'<div style="font-size:56px;font-weight:900;color:'+col+';font-family:Arial,sans-serif;line-height:1;">'+remaining+'</div>'
+    +'<div style="height:7px;background:#1A0030;border-radius:4px;margin:10px 0;overflow:hidden;">'
+    +'<div style="height:100%;width:'+(pct*100)+'%;background:'+col+';border-radius:4px;"></div>'
     +'</div></div>';
+}
+
+var remoteTickTimer=null;
+function tickRemoteTimer(elId, s){
+  if(remoteTickTimer) clearInterval(remoteTickTimer);
+  remoteTickTimer=setInterval(function(){
+    var el=document.getElementById(elId);
+    if(!el){ clearInterval(remoteTickTimer); return; }
+    if(s.timerDone||Date.now()>=s.timerEnd){
+      clearInterval(remoteTickTimer);
+      el.innerHTML='<div style="text-align:center;padding:8px 0;font-size:36px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
+      return;
+    }
+    el.innerHTML=buildTimerHTML(s);
+  },500);
 }
 
 function renderBamboozlerWaiting(){
@@ -808,8 +816,6 @@ function renderBamboozlerWaiting(){
 
 function renderBamboozlerForState(s){
   if(!s||s.phase==='idle'||s.phase==='r1'){renderBamboozlerWaiting();return;}
-  // Update timer display if active
-  updateRemoteTimer(s);
   if(s.phase==='r2_cued') renderBamboozlerR2(s);
   else if(s.phase==='r4_cued') renderBamboozlerR4(s);
   else if(s.phase==='final_entry') renderBamboozlerFinal(s);
@@ -843,7 +849,7 @@ function renderBamboozlerR2(s){
     +'<div class="qtext">'+esc(s.question)+'</div>'
     +'<div class="correct"><span>Correct: </span>'+esc(s.correct)+'</div>'
     +'</div>'
-    +'<div id="remote-timer"></div>'
+    +(s.timerEnd?'<div id="remote-timer" style="margin-bottom:12px;">'+buildTimerHTML(s)+'</div>':'')
     +'<div class="section-label">Your two Bamboozle answers</div>'
     +'<div class="bam-label">Bamboozle 1</div>'
     +'<input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off">'
@@ -860,30 +866,11 @@ function renderBamboozlerR2(s){
     +'</div>';
   document.getElementById('bam1').addEventListener('input',renderOrderOpts);
   document.getElementById('bam2').addEventListener('input',renderOrderOpts);
-  // Start ticking if timer already running
-  if(s.timerEnd&&!s.timerDone) tickBamTimer(s);
+  // Start ticking immediately if timer is active
+  if(s.timerEnd) tickRemoteTimer('remote-timer', s);
 }
 
-var bamTickTimer=null;
-function tickBamTimer(s){
-  if(bamTickTimer)clearInterval(bamTickTimer);
-  bamTickTimer=setInterval(function(){
-    var el=document.getElementById('remote-timer');
-    if(!el){clearInterval(bamTickTimer);return;}
-    var remaining=Math.max(0,Math.round((s.timerEnd-Date.now())/1000));
-    var total=s.timerTotal||20;
-    var pct=Math.max(0,remaining/total);
-    var col=remaining<=5?'#FF3333':remaining<=10?'#FF8800':'var(--cyan)';
-    el.innerHTML='<div style="text-align:center;padding:8px 0;">'
-      +'<div style="font-size:48px;font-weight:900;color:'+col+';font-family:Arial,sans-serif;line-height:1;">'+remaining+'</div>'
-      +'<div style="height:6px;background:#1A0030;border-radius:3px;margin:8px 0;overflow:hidden;">'
-      +'<div style="height:100%;width:'+(pct*100)+'%;background:'+col+';border-radius:3px;"></div>'
-      +'</div></div>';
-    if(remaining<=0){clearInterval(bamTickTimer);
-      el.innerHTML='<div style="text-align:center;padding:8px 0;font-size:28px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
-    }
-  },500);
-}
+
 
 var pendingR2State=null;
 
@@ -1180,48 +1167,17 @@ function setAudHeader(label,text){
 function renderAudCued(s){
   setAudHeader((s.roundLabel||s.mode||'Round')+' — Question '+(s.qIdx+1)+' of '+s.total, s.question);
   document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
-  var timerHTML2='';
-  if(s.timerEnd&&!s.timerDone){
-    var remaining=Math.max(0,Math.round((s.timerEnd-Date.now())/1000));
-    var total=s.timerTotal||20;
-    var pct=Math.max(0,remaining/total);
-    var col=remaining<=5?'#FF3333':remaining<=10?'#FF8800':'var(--cyan)';
-    timerHTML2='<div style="margin-top:24px;width:100%;max-width:300px;">'
-      +'<div id="remote-timer" style="text-align:center;">'
-      +'<div style="font-size:72px;font-weight:900;color:'+col+';font-family:Arial,sans-serif;line-height:1;">'+remaining+'</div>'
-      +'<div style="height:8px;background:#1A0030;border-radius:4px;margin:12px 0;overflow:hidden;">'
-      +'<div style="height:100%;width:'+(pct*100)+'%;background:'+col+';border-radius:4px;"></div>'
-      +'</div></div></div>';
-  } else if(s.timerDone){
-    timerHTML2='<div style="margin-top:24px;font-size:32px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
-  }
+  var timerHTML2=s.timerEnd
+    ?'<div id="aud-remote-timer" style="margin-top:20px;width:100%;max-width:320px;">'+buildTimerHTML(s)+'</div>'
+    :'';
   document.getElementById('aud-opts').innerHTML=
     '<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;align-items:center;justify-content:center;padding:40px 40px;">'
     +'<div style="font-size:clamp(18px,3vw,32px);color:var(--white);text-align:center;line-height:1.5;margin-bottom:24px;">'+esc(s.question)+'</div>'
     +timerHTML2
-    +((!s.timerEnd||s.timerDone)?'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;margin-top:16px;">Bamboozler is thinking…</p>':'')
+    +(!s.timerEnd?'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;margin-top:16px;">Bamboozler is thinking…</p>':'')
     +'</div>';
   document.getElementById('aud-footer').textContent='';
-  // Keep timer ticking client-side between polls
-  if(s.timerEnd&&!s.timerDone) tickAudTimer(s);
-}
-
-var audTickTimer=null;
-function tickAudTimer(s){
-  if(audTickTimer)clearInterval(audTickTimer);
-  audTickTimer=setInterval(function(){
-    var el=document.getElementById('remote-timer');
-    if(!el){clearInterval(audTickTimer);return;}
-    var remaining=Math.max(0,Math.round((s.timerEnd-Date.now())/1000));
-    var total=s.timerTotal||20;
-    var pct=Math.max(0,remaining/total);
-    var col=remaining<=5?'#FF3333':remaining<=10?'#FF8800':'var(--cyan)';
-    el.innerHTML='<div style="font-size:72px;font-weight:900;color:'+col+';font-family:Arial,sans-serif;line-height:1;">'+remaining+'</div>'
-      +'<div style="height:8px;background:#1A0030;border-radius:4px;margin:12px 0;overflow:hidden;">'
-      +'<div style="height:100%;width:'+(pct*100)+'%;background:'+col+';border-radius:4px;"></div>'
-      +'</div>';
-    if(remaining<=0){clearInterval(audTickTimer);el.innerHTML='<div style="font-size:48px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';}
-  },500);
+  if(s.timerEnd) tickRemoteTimer('aud-remote-timer', s);
 }
 
 function renderAudR1(s){
