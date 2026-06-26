@@ -1022,10 +1022,14 @@ function submitFinalBam(){
 
 // ── Audience polling ───────────────────────────────────────
 function startPoll(){
+  lastHash='__init__'; // force first poll to always render
   renderAudience(null);
   if(pollTimer)clearInterval(pollTimer);
   pollTimer=setInterval(function(){
-    readState(function(s){var h=JSON.stringify(s);if(h!==lastHash){lastHash=h;renderAudience(s);}});
+    readState(function(s){
+      var h=JSON.stringify(s);
+      if(h!==lastHash){lastHash=h;renderAudience(s);}
+    });
   },1200);
 }
 
@@ -1037,11 +1041,13 @@ function renderAudience(s){
   var done=document.getElementById('aud-done');
 
   // Active question phases
-  if(s&&(s.phase==='r1'||s.phase==='r2'||s.phase==='r4'||s.phase==='final_reveal')){
+  if(s&&(s.phase==='r1'||s.phase==='r2'||s.phase==='r4'||s.phase==='final_reveal'
+     ||s.phase==='r2_cued'||s.phase==='r4_cued')){
     wait.style.display='none'; main.style.display='flex'; done.style.display='none';
     if(s.phase==='r1') renderAudR1(s);
     else if(s.phase==='r2') renderAudR2(s);
-    else if(s.phase==='r4') renderAudR4(s);
+    else if(s.phase==='r2_cued') renderAudCued(s);
+    else if(s.phase==='r4'||s.phase==='r4_cued') renderAudR4(s);
     else renderAudFinal(s);
     return;
   }
@@ -1072,6 +1078,18 @@ function renderAudience(s){
 function setAudHeader(label,text){
   document.getElementById('aud-qlabel').textContent=label;
   document.getElementById('aud-qtext').textContent=text;
+}
+
+function renderAudCued(s){
+  // Question is live, Bamboozler is entering answers
+  setAudHeader((s.roundLabel||s.mode||'Round')+' — Question '+(s.qIdx+1)+' of '+s.total, s.question);
+  document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
+  document.getElementById('aud-opts').innerHTML=
+    '<div class="opt-cell shown" style="grid-column:1/-1;align-items:center;justify-content:center;padding:60px 40px;">'
+    +'<div style="font-size:clamp(18px,3vw,32px);color:var(--white);text-align:center;line-height:1.5;margin-bottom:32px;">'+esc(s.question)+'</div>'
+    +'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;">Bamboozler is thinking…</p>'
+    +'</div>';
+  document.getElementById('aud-footer').textContent='';
 }
 
 function renderAudR1(s){
