@@ -515,6 +515,7 @@ function renderProducer(qi){
 function producerNav(qi){
   if(qi<0||qi>=questions.length)return;
   stopCountdown();
+  if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
   writeState({phase:'idle',qIdx:qi,total:questions.length},function(){renderProducer(qi);});
 }
 
@@ -532,8 +533,10 @@ function r1Controls(q,qi){
   if(!q.r1answers||!q.r1answers.length){
     return '<div class="p-warn">No R1 answers found for this question. Add a comma-separated answers column.</div>';
   }
-  return '<div class="p-section-label">Round 1 controls</div>'
-    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Audience screen shows the answer grid. Players tap to strike out. Tap below to reveal the correct answer.</p>'
+  // Push to audience immediately
+  pushR1(qi);
+  return '<div class="p-section-label">Round 1 — Q'+(qi+1)+'</div>'
+    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Question and answer grid are live on the audience screen. Players tap to strike out answers.</p>'
     +'<button class="p-btn-gold" onclick="r1Reveal('+qi+')">&#x2605; Reveal correct answer</button>'
     +'<button class="p-btn-next" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
 }
@@ -641,10 +644,10 @@ function doRevealCorrect(){
 
 // ── Producer R4 controls ───────────────────────────────────
 function r4Controls(q,qi){
-  return '<div class="p-section-label">Round 4 controls</div>'
-    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to the Bamboozler. They will decide to deliver truthfully or swap the last word.</p>'
-    +'<button class="p-btn-cyan" onclick="cueR4('+qi+')">&#x25BA; Cue question</button>'
-    +'<div id="r4-pending" style="display:none;margin-top:12px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted);">Waiting for Bamboozler...</div>'
+  return '<div class="p-section-label">Round 4 — Q'+(qi+1)+'</div>'
+    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to the Bamboozler. They will decide to deliver it truthfully or swap the last word.</p>'
+    +'<button class="p-btn-cyan" onclick="cueR4('+qi+')" id="r4-cue-btn">&#x25BA; Cue question</button>'
+    +'<div id="r4-pending" style="display:none;margin-top:12px;padding:12px;background:var(--dark);border-radius:8px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted);">&#x23F3; Waiting for Bamboozler to decide...</div>'
     +'<div id="r4-reveal" style="display:none;margin-top:12px;">'
     +'<button class="p-btn-gold" onclick="doR4Reveal()">&#x2605; Reveal answer</button>'
     +'</div>';
@@ -653,21 +656,27 @@ function r4Controls(q,qi){
 function cueR4(qi){
   var q=questions[qi];
   var state={phase:'r4_cued',qIdx:qi,question:q.q,correct:q.correct,total:questions.length};
-  writeState(state,function(){
-    document.getElementById('r4-pending').style.display='block';
-    startRevealPoll(qi);
+  writeState(state,function(ok){
+    if(!ok){alert('Could not sync. Check Supabase.');return;}
+    var cueBtn=document.getElementById('r4-cue-btn');
+    if(cueBtn)cueBtn.style.display='none';
+    var pending=document.getElementById('r4-pending');
+    if(pending)pending.style.display='block';
+    // Poll for Bamboozler submission
+    if(pollTimer)clearInterval(pollTimer);
+    pollTimer=setInterval(function(){
+      readState(function(s){
+        if(!s||s.qIdx!==qi)return;
+        if(s.phase==='r4'){
+          clearInterval(pollTimer);pollTimer=null;
+          var p=document.getElementById('r4-pending');
+          if(p)p.innerHTML='&#x2713; Bamboozler has decided!';
+          var r=document.getElementById('r4-reveal');
+          if(r)r.style.display='block';
+        }
+      });
+    },1000);
   });
-  if(pollTimer)clearInterval(pollTimer);
-  pollTimer=setInterval(function(){
-    readState(function(s){
-      if(!s||s.qIdx!==qi)return;
-      if(s.phase==='r4'){
-        clearInterval(pollTimer);pollTimer=null;
-        document.getElementById('r4-pending').style.display='none';
-        document.getElementById('r4-reveal').style.display='block';
-      }
-    });
-  },1000);
 }
 
 function doR4Reveal(){
@@ -1141,7 +1150,14 @@ function renderAudR2(s){
 }
 
 function renderAudR4(s){
-  setAudHeader('Round 4 \u2014 Question '+(s.qIdx+1)+' of '+s.total,'');
+  if(s.phase==='r4_cued'){
+    setAudHeader('Round 4 — Question '+(s.qIdx+1)+' of '+s.total,'');
+    document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
+    document.getElementById('aud-opts').innerHTML='<div class="opt-cell shown" style="grid-column:1/-1;padding:60px 40px;text-align:center;flex-direction:column;"><div style="font-size:clamp(18px,3vw,30px);color:var(--white);line-height:1.5;margin-bottom:32px;">'+esc(s.question)+'</div><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;">Bamboozler is deciding…</p></div>';
+    document.getElementById('aud-footer').textContent='True or Bamboozle?';
+    return;
+  }
+  setAudHeader('Round 4 — Question '+(s.qIdx+1)+' of '+s.total,'');
   document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
   document.getElementById('aud-opts').innerHTML=
     '<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:clamp(28px,5vw,56px) clamp(20px,4vw,48px);">'
