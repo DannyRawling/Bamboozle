@@ -161,8 +161,17 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
           <option value="">-- Select role --</option>
           <option value="audience">Audience</option>
           <option value="bamboozler">Bamboozler</option>
+          <option value="contestant">Contestant</option>
           <option value="producer">Producer</option>
         </select>
+      </div>
+      <div id="name-row" class="field" style="display:none;">
+        <label>Your name</label>
+        <input type="text" name="cname" id="nameInput" placeholder="e.g. Danny" autocomplete="off">
+      </div>
+            <div id="name-row" class="field" style="display:none;">
+        <label>Your name</label>
+        <input type="text" id="nameInput" placeholder="e.g. Danny" autocomplete="off" autocorrect="off">
       </div>
       <div id="pin-row" class="field" style="display:none;">
         <label>Producer PIN</label>
@@ -215,6 +224,15 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
     <div class="session-badge" id="b-badge"></div>
   </div>
   <div class="b-body" id="b-body"></div>
+</div>
+
+<!-- ══ CONTESTANT ══ -->
+<div id="contestant" class="screen">
+  <div class="b-header">
+    <div class="logo-sm"><span style="color:#B44FEE">BAMB</span><span style="color:var(--gold)">O</span><span style="color:#B44FEE">OZLE</span></div>
+    <div class="session-badge" id="c-badge"></div>
+  </div>
+  <div class="b-body" id="c-body"></div>
 </div>
 
 <!-- ══ AUDIENCE ══ -->
@@ -410,6 +428,15 @@ function doJoin(){
     startPoll();
     return;
   }
+  if(r==='contestant'){
+    var nameEl=document.getElementById('nameInput');
+    var cname=(nameEl?nameEl.value.trim():'') || 'Contestant';
+    contestantName=cname;
+    showScreen('contestant');
+    document.getElementById('c-badge').textContent=cname+' — '+sessionCode;
+    startContestantPoll();
+    return;
+  }
   if(r==='bamboozler'){
     showScreen('bamboozler');
     var badge=document.getElementById('b-badge');
@@ -427,6 +454,7 @@ function doJoin(){
 // Show/hide PIN field
 function onRoleChange(v){
   document.getElementById('pin-row').style.display=(v==='producer')?'block':'none';
+  document.getElementById('name-row').style.display=(v==='contestant')?'block':'none';
 }
 
 function handleJoinForm(e){
@@ -523,7 +551,8 @@ function producerNav(qi){
   if(qi<0||qi>=questions.length)return;
   stopCountdown();
   if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
-  writeState({phase:'idle',qIdx:qi,total:questions.length},function(){renderProducer(qi);});
+  // Clear votes for new question
+  writeState({phase:'idle',qIdx:qi,total:questions.length,votes:{}},function(){renderProducer(qi);});
 }
 
 function roundLabel(mode,round){
@@ -543,7 +572,10 @@ function r1Controls(q,qi){
   // Push to audience immediately
   pushR1(qi);
   return '<div class="p-section-label">Round 1 — Q'+(qi+1)+'</div>'
-    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Question and answer grid are live on the audience screen. Players tap to strike out answers.</p>'
+    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Question and answer grid are live. Players tap to strike out answers.</p>'
+    +'<div class="p-section-label" style="margin-top:4px;">Contestant votes</div>'
+    +'<div id="p-votes" style="margin-bottom:14px;"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">No votes yet</p></div>'
+    +'<button class="p-btn-green" onclick="refreshVotes()">&#x21BB; Refresh votes</button>'
     +'<button class="p-btn-gold" onclick="r1Reveal('+qi+')">&#x2605; Reveal correct answer</button>'
     +'<button class="p-btn-next" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
 }
@@ -561,7 +593,7 @@ function r1Reveal(qi){
 
 function pushR1(qi){
   var q=questions[qi];
-  var state={phase:'r1',qIdx:qi,question:q.q,r1answers:q.r1answers,r1correct:q.r1correct,struck:[],revealed:false,total:questions.length};
+  var state={phase:'r1',qIdx:qi,question:q.q,r1answers:q.r1answers,r1correct:q.r1correct,struck:[],revealed:false,votes:{},total:questions.length};
   writeState(state,function(){});
 }
 
@@ -575,6 +607,9 @@ function r2Controls(q,qi,label){
     +'<button class="p-btn-outline" onclick="startR2Timer('+qi+',20)">&#x23F1; Start 20s timer</button>'
     +'<div id="p-timer"></div>'
     +'<div class="p-section-label" style="margin-top:16px;">Reveal (waiting for Bamboozler...)</div>'
+    +'<div class="p-section-label" style="margin-top:12px;">Contestant votes</div>'
+    +'<div id="p-votes" style="margin-bottom:10px;"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">No votes yet</p></div>'
+    +'<button class="p-btn-outline" onclick="refreshVotes()" style="margin-bottom:12px;">&#x21BB; Refresh votes</button>'
     +'<div id="p-reveal-controls">'+waitingHTML()+'</div>'
     +'</div>';
 }
@@ -1369,6 +1404,152 @@ function renderAudFinal(s){
       +'</div>';
   }).join('');
   document.getElementById('aud-footer').innerHTML=rev===0?'<span class="pulsing">The Bamboozles are coming\u2026</span>':rev<=n?rev+' of '+n+' revealed':'\u2605 Correct answer revealed!';
+}
+
+// ── Contestant ─────────────────────────────────────────────
+var contestantName='';
+var myVote=null; // current selection
+var lastContestantHash='__init__';
+
+function startContestantPoll(){
+  renderContestantWaiting();
+  if(pollTimer)clearInterval(pollTimer);
+  pollTimer=setInterval(function(){
+    readState(function(s){
+      var h=JSON.stringify(s);
+      if(h!==lastContestantHash){lastContestantHash=h;renderContestantForState(s);}
+    });
+  },1200);
+}
+
+function renderContestantWaiting(){
+  document.getElementById('c-body').innerHTML=
+    '<div style="text-align:center;padding:60px 20px;">'
+    +'<div style="font-size:40px;margin-bottom:16px;">&#x1F3AF;</div>'
+    +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:16px;">Hi '+esc(contestantName)+'!</p>'
+    +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Waiting for the next question...</p>'
+    +'</div>';
+}
+
+function renderContestantForState(s){
+  if(!s||s.phase==='idle'){renderContestantWaiting();myVote=null;return;}
+  if(s.phase==='r1') renderContestantR1(s);
+  else if(s.phase==='r2'||s.phase==='r2_cued') renderContestantR2(s);
+  else renderContestantWaiting();
+}
+
+// Round 1 — full A-L grid, tap to select
+function renderContestantR1(s){
+  if(!s.r1answers||!s.r1answers.length){renderContestantWaiting();return;}
+  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
+  var votes=s.votes||{};
+  var myCurrentVote=votes[contestantName]!==undefined?votes[contestantName]:null;
+  var locked=s.revealed||false;
+
+  var grid=s.r1answers.map(function(ans,i){
+    var selected=myCurrentVote===i;
+    var bg=selected?'var(--gold)':'var(--dark)';
+    var border=selected?'var(--gold)':'var(--purple)';
+    var color=selected?'var(--black)':'var(--white)';
+    var lcolor=selected?'var(--black)':'var(--cyan)';
+    return '<div onclick="'+(locked?'':'contestantVoteR1('+i+')')+'" style="display:flex;align-items:center;gap:10px;padding:14px;background:'+bg+';border:2px solid '+border+';border-radius:10px;cursor:'+(locked?'default':'pointer')+';transition:all 0.2s;margin-bottom:8px;">'
+      +'<div style="width:32px;height:32px;border-radius:50%;background:'+lcolor+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:var(--black);flex-shrink:0;">'+labels[i]+'</div>'
+      +'<div style="font-size:15px;font-family:Arial,sans-serif;color:'+color+';">'+esc(ans)+'</div>'
+      +(selected?'<div style="margin-left:auto;font-size:18px;">&#x2713;</div>':'')
+      +'</div>';
+  }).join('');
+
+  document.getElementById('c-body').innerHTML=
+    '<div class="q-card" style="border-color:var(--gold);">'
+    +'<div class="qlabel" style="color:var(--gold);">Round 1</div>'
+    +'<div class="qtext">'+esc(s.question)+'</div>'
+    +'</div>'
+    +(myCurrentVote!==null?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:10px 14px;font-family:Arial,sans-serif;font-size:13px;color:var(--gold);margin-bottom:14px;text-align:center;">Your answer: <strong>'+labels[myCurrentVote]+' — '+esc(s.r1answers[myCurrentVote])+'</strong>'+(locked?' (locked)':' — tap another to change')+'</div>':'')
+    +'<div class="section-label">'+(locked?'Answers locked':'Tap your answer')+'</div>'
+    +grid;
+}
+
+function contestantVoteR1(i){
+  if(!i&&i!==0)return;
+  myVote=i;
+  readState(function(s){
+    if(!s||s.phase!=='r1')return;
+    var votes=s.votes||{};
+    votes[contestantName]=i;
+    s.votes=votes;
+    writeState(s,function(){renderContestantR1(s);lastContestantHash=JSON.stringify(s);});
+  });
+}
+
+// Round 2/3 — A B C selection
+function renderContestantR2(s){
+  var rev=s.reveal||0;
+  var votes=s.votes||{};
+  var myCurrentVote=votes[contestantName]!==undefined?votes[contestantName]:null;
+  var labels=['A','B','C'];
+  var correctRevealed=rev>=4;
+  var locked=correctRevealed;
+
+  document.getElementById('c-body').innerHTML=
+    '<div class="q-card" style="border-color:var(--magenta);">'
+    +'<div class="qlabel">'+(s.roundLabel||'Round 2')+'</div>'
+    +'<div class="qtext">'+esc(s.question)+'</div>'
+    +'</div>'
+    +(myCurrentVote!==null?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:10px 14px;font-family:Arial,sans-serif;font-size:13px;color:var(--gold);margin-bottom:14px;text-align:center;">Your answer: <strong>'+labels[myCurrentVote]+'</strong>'+(locked?' (locked)':' — tap another to change')+'</div>':'')
+    +'<div class="section-label">'+(rev===0?'Waiting for options...':locked?'Answers locked':'Tap your answer')+'</div>'
+    +(rev>0?labels.slice(0,Math.min(rev,3)).map(function(l,i){
+      var selected=myCurrentVote===i;
+      var isCorrect=correctRevealed&&i===s.correctPos;
+      var bg=isCorrect?'#001800':selected?'var(--gold)':'var(--dark)';
+      var border=isCorrect?'var(--gold)':selected?'var(--gold)':'var(--purple)';
+      var color=selected||isCorrect?'var(--black)':'var(--white)';
+      return '<div onclick="'+(locked?'':'contestantVoteR2('+i+')')+'" style="display:flex;align-items:center;gap:12px;padding:18px;background:'+bg+';border:2px solid '+border+';border-radius:10px;cursor:'+(locked?'default':'pointer')+';margin-bottom:10px;transition:all 0.2s;">'
+        +'<div style="width:36px;height:36px;border-radius:50%;background:'+(selected||isCorrect?'var(--black)':'var(--magenta)')+';display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:900;color:var(--white);flex-shrink:0;">'+l+'</div>'
+        +'<div style="font-size:16px;font-family:Arial,sans-serif;color:'+color+';">'+esc(s.options[i])+'</div>'
+        +(selected?'<div style="margin-left:auto;font-size:20px;color:var(--black);">&#x2713;</div>':'')
+        +'</div>';
+    }).join(''):'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;">Options will appear here as they are revealed...</p>');
+}
+
+function contestantVoteR2(i){
+  myVote=i;
+  readState(function(s){
+    if(!s||(s.phase!=='r2'&&s.phase!=='r2_cued'))return;
+    if((s.reveal||0)>=4)return; // locked after correct revealed
+    var votes=s.votes||{};
+    votes[contestantName]=i;
+    s.votes=votes;
+    writeState(s,function(){renderContestantR2(s);lastContestantHash=JSON.stringify(s);});
+  });
+}
+
+// ── Producer: show votes panel ─────────────────────────────
+function refreshVotes(){
+  readState(function(s){
+    var el=document.getElementById('p-votes');
+    if(!el||!s)return;
+    renderVotesPanel(s,el);
+  });
+}
+
+function renderVotesPanel(s,container){
+  var votes=s.votes||{};
+  var names=Object.keys(votes);
+  if(!names.length){
+    container.innerHTML='<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">No votes yet</p>';
+    return;
+  }
+  var labels=s.r1answers?['A','B','C','D','E','F','G','H','I','J','K','L']:['A','B','C'];
+  container.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px;">'
+    +names.map(function(name){
+      var v=votes[name];
+      var label=labels[v]||'?';
+      return '<div style="background:var(--dark);border:1px solid var(--purple);border-radius:6px;padding:6px 10px;font-family:Arial,sans-serif;font-size:12px;">'
+        +'<span style="color:var(--muted);">'+esc(name)+'</span> '
+        +'<span style="color:var(--gold);font-weight:900;">'+label+'</span>'
+        +'</div>';
+    }).join('')
+    +'</div>';
 }
 
 // ── Utilities ──────────────────────────────────────────────
