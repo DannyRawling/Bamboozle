@@ -1641,7 +1641,7 @@ var activeRecognition=null;
 function startVoice(inputId, btnId){
   var SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){
-    alert('Voice input is not supported in this browser. Try Chrome on Android or Safari on iOS 15+.');
+    alert('Voice input not supported. Try Safari on iOS or Chrome on Android.');
     return;
   }
 
@@ -1651,74 +1651,64 @@ function startVoice(inputId, btnId){
 
   // Stop if already listening
   if(activeRecognition){
-    try{ activeRecognition.stop(); }catch(e){}
+    try{ activeRecognition.abort(); }catch(e){}
     activeRecognition=null;
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
+    input.placeholder='';
     return;
   }
 
+  // iOS Safari: continuous=false, interimResults=false
+  // It listens for one utterance then fires onresult with final transcript
   var recognition=new SpeechRecognition();
   recognition.lang='en-GB';
-  recognition.interimResults=true;
+  recognition.continuous=false;
+  recognition.interimResults=false; // iOS ignores interim anyway
   recognition.maxAlternatives=1;
-  recognition.continuous=true; // keep listening until manually stopped
 
   activeRecognition=recognition;
   btn.classList.add('listening');
   btn.innerHTML='&#x23F9;';
-  input.value='';
-  input.placeholder='Listening...';
-
-  recognition.onstart=function(){
-    console.log('Voice started');
-  };
+  input.placeholder='Speak now...';
 
   recognition.onresult=function(e){
-    var interim='', final='';
-    for(var i=0;i<e.results.length;i++){
-      if(e.results[i].isFinal) final+=e.results[i][0].transcript;
-      else interim+=e.results[i][0].transcript;
-    }
-    input.value=final||interim;
+    var transcript=e.results[0][0].transcript;
+    input.value=transcript;
     input.dispatchEvent(new Event('input'));
   };
 
+  recognition.onspeechend=function(){
+    try{ recognition.stop(); }catch(e){}
+  };
+
   recognition.onerror=function(e){
-    console.log('Voice error:', e.error);
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
-    input.placeholder='Tap to type or use mic';
+    input.placeholder='';
     activeRecognition=null;
     if(e.error==='not-allowed'){
-      alert('Microphone access denied. In your browser settings, allow microphone for this site.');
-    } else if(e.error==='no-speech'){
-      // Silently reset - no speech detected
-    } else {
-      alert('Voice error: '+e.error+'. Try tapping the mic again.');
+      alert('Microphone blocked. Go to Settings > Safari > Microphone and allow this site.');
+    } else if(e.error!=='no-speech'&&e.error!=='aborted'){
+      alert('Voice error: '+e.error);
     }
   };
 
   recognition.onend=function(){
-    // On iOS, recognition stops automatically - that's ok
-    // Only reset UI if we didn't manually stop
-    if(activeRecognition){
-      btn.classList.remove('listening');
-      btn.innerHTML='&#x1F3A4;';
-      input.placeholder='Tap to type or use mic';
-      activeRecognition=null;
-      input.dispatchEvent(new Event('input'));
-    }
+    btn.classList.remove('listening');
+    btn.innerHTML='&#x1F3A4;';
+    input.placeholder='';
+    activeRecognition=null;
+    input.dispatchEvent(new Event('input'));
   };
 
   try{
     recognition.start();
-  } catch(e){
-    console.log('Recognition start error:', e);
+  }catch(e){
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
     activeRecognition=null;
-    alert('Could not start voice input: '+e.message);
+    alert('Could not start mic: '+e.message);
   }
 }
 
