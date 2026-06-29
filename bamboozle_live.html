@@ -212,7 +212,10 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
 <div id="producer" class="screen">
   <div class="p-header">
     <div class="logo-sm"><span style="color:#B44FEE">BAMB</span><span style="color:var(--gold)">O</span><span style="color:#B44FEE">OZLE</span></div>
-    <div class="p-badge" id="p-badge"></div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <button onclick="sendToHolding()" style="padding:6px 12px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;">&#x23F8; Holding</button>
+      <div class="p-badge" id="p-badge"></div>
+    </div>
   </div>
   <div class="p-body" id="p-body"></div>
 </div>
@@ -241,6 +244,13 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
     <div class="logo"><span class="p">BAMB</span><span class="g">O</span><span class="p">OZLE</span></div>
     <div class="session-big" id="aud-code"></div>
     <p class="pulsing">Waiting to start&#x2026;</p>
+  </div>
+  <div id="aud-holding" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;background:var(--black);">
+    <div style="font-size:clamp(48px,12vw,96px);font-weight:900;letter-spacing:6px;line-height:1;text-align:center;">
+      <span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span>
+    </div>
+    <div style="margin-top:24px;width:80%;max-width:500px;height:4px;background:linear-gradient(90deg,transparent,var(--magenta),var(--cyan),transparent);border-radius:2px;"></div>
+    <p style="margin-top:20px;font-family:Arial,sans-serif;font-size:clamp(13px,2vw,18px);letter-spacing:4px;color:var(--muted);text-transform:uppercase;">Do you have an answer for everything?</p>
   </div>
   <div class="aud-main" id="aud-main">
     <div class="aud-top">
@@ -758,21 +768,24 @@ function finalControls(q,qi){
     +'<div id="final-reveal-ctrl" style="display:none;margin-top:12px;"></div>';
 }
 
+var finalPollTimer=null;
 function cueFinal(qi){
   var q=questions[qi];
-  writeState({phase:'final_entry',qIdx:qi,question:q.q,correct:q.correct,answers:[],total:questions.length},function(){
-    document.getElementById('final-status').style.display='block';
-    if(pollTimer)clearInterval(pollTimer);
-    pollTimer=setInterval(function(){
+  writeState({phase:'final_entry',qIdx:qi,question:q.q,correct:q.correct,answers:[],total:questions.length},function(ok){
+    if(!ok){alert('Could not sync. Check Supabase.');return;}
+    var statusEl=document.getElementById('final-status');
+    var revealBtn=document.getElementById('final-reveal-btn');
+    if(statusEl) statusEl.style.display='block';
+    if(finalPollTimer) clearInterval(finalPollTimer);
+    finalPollTimer=setInterval(function(){
       readState(function(s){
         if(!s||s.qIdx!==qi)return;
         var ans=s.answers||[];
-        var el=document.getElementById('final-status');
-        if(el) el.textContent=ans.length+' of 5 answers submitted';
+        if(statusEl) statusEl.textContent=ans.length+' of 5 answers submitted';
         if(ans.length>=5){
-          clearInterval(pollTimer);pollTimer=null;
-          el.textContent='All 5 answers ready!';
-          document.getElementById('final-reveal-btn').style.display='block';
+          clearInterval(finalPollTimer);finalPollTimer=null;
+          if(statusEl) statusEl.textContent='All 5 answers ready!';
+          if(revealBtn) revealBtn.style.display='block';
         }
       });
     },1000);
@@ -781,8 +794,11 @@ function cueFinal(qi){
 
 function startFinalReveal(qi){
   readState(function(s){
+    if(!s){alert('Could not read session state.');return;}
     var correct=questions[qi].correct;
-    var pool=s.answers.slice();
+    var answers=s.answers||[];
+    if(!answers.length){alert('No answers found. Make sure contestants have submitted.');return;}
+    var pool=answers.slice();
     pool.push(correct);
     for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
     var cp=pool.indexOf(correct);
@@ -1216,6 +1232,8 @@ function renderAudience(s){
   if(s&&(s.phase==='r1'||s.phase==='r2'||s.phase==='r4'||s.phase==='final_reveal'
      ||s.phase==='r2_cued'||s.phase==='r4_cued')){
     wait.style.display='none'; main.style.display='flex'; done.style.display='none';
+    var holdingEl=document.getElementById('aud-holding');
+    if(holdingEl) holdingEl.style.display='none';
     if(s.phase==='r1') renderAudR1(s);
     else if(s.phase==='r2') renderAudR2(s);
     else if(s.phase==='r2_cued'){
@@ -1254,7 +1272,38 @@ function renderAudience(s){
     return;
   }
 
-  // Idle / waiting / cued (show waiting screen)
+  // Holding screen
+  if(s&&s.phase==='holding'){
+    wait.style.display='none'; main.style.display='none'; done.style.display='none';
+    var holding=document.getElementById('aud-holding');
+    if(holding) holding.style.display='flex';
+    return;
+  }
+  // Hide holding if showing
+  var holding=document.getElementById('aud-holding');
+  if(holding) holding.style.display='none';
+
+  // Holding screen
+  if(s&&s.phase==='holding'){
+    wait.style.display='none'; main.style.display='none'; done.style.display='none';
+    var holdingEl=document.getElementById('aud-holding');
+    if(holdingEl) holdingEl.style.display='flex';
+    return;
+  }
+  // Hide holding for all other states
+  var holdingEl2=document.getElementById('aud-holding');
+  if(holdingEl2) holdingEl2.style.display='none';
+
+  // Holding screen
+  if(s&&s.phase==='holding'){
+    wait.style.display='none'; main.style.display='none'; done.style.display='none';
+    var hEl=document.getElementById('aud-holding');
+    if(hEl) hEl.style.display='flex';
+    return;
+  }
+  var hEl2=document.getElementById('aud-holding');
+  if(hEl2) hEl2.style.display='none';
+  // Idle / waiting (show waiting screen)
   wait.style.display='flex'; main.style.display='none'; done.style.display='none';
   wait.innerHTML='<div class="logo"><span class="p">BAMB</span><span class="g">O</span><span class="p">OZLE</span></div>'
     +'<div style="font-size:clamp(36px,10vw,64px);letter-spacing:12px;color:var(--gold);margin:16px 0;">'+sessionCode+'</div>'
@@ -1348,7 +1397,13 @@ function renderAudR4(s){
   if(s.phase==='r4_cued'){
     setAudHeader('Round 4 — Question '+(s.qIdx+1)+' of '+s.total,'');
     document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
-    document.getElementById('aud-opts').innerHTML='<div class="opt-cell shown" style="grid-column:1/-1;padding:60px 40px;text-align:center;flex-direction:column;"><div style="font-size:clamp(18px,3vw,30px);color:var(--white);line-height:1.5;margin-bottom:32px;">'+esc(s.question)+'</div><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;">Bamboozler is deciding…</p></div>';
+    // Hide last word of question from audience while Bamboozler decides
+    var cq=s.question||'';
+    var cqSpace=cq.lastIndexOf(' ');
+    var cqStem=cqSpace>=0?cq.substring(0,cqSpace+1):cq+' ';
+    var cqHidden='_'.repeat(Math.max(3,(cq.substring(cqSpace+1)||'').length));
+    var cqDisplay=esc(cqStem)+'<span style="color:var(--muted);letter-spacing:3px;">'+cqHidden+'</span>';
+    document.getElementById('aud-opts').innerHTML='<div class="opt-cell shown" style="grid-column:1/-1;padding:60px 40px;text-align:center;flex-direction:column;"><div style="font-size:clamp(18px,3vw,30px);color:var(--white);line-height:1.5;margin-bottom:32px;">'+cqDisplay+'</div><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;">Bamboozler is deciding…</p></div>';
     document.getElementById('aud-footer').textContent='True or Bamboozle?';
     return;
   }
@@ -1360,12 +1415,21 @@ function renderAudR4(s){
   var correctWord=s.correctWord||s.correct||'';
   // On reveal show full correct statement with last word in gold
   // Before reveal show the delivered statement (may be a bamboozle)
+  // Strip last word from delivered statement for audience display
+  var deliveredStmt=s.statement||stmt;
+  var dLastSpace=deliveredStmt.lastIndexOf(' ');
+  var deliveredStem=dLastSpace>=0?deliveredStmt.substring(0,dLastSpace+1):deliveredStmt+' ';
+
   var displayHTML;
   if(s.revealed){
+    // Show correct statement with last word highlighted in gold
     displayHTML='<span style="color:var(--white);">'+esc(stem)+'</span>'
       +'<span style="color:var(--gold);text-decoration:underline;font-weight:900;">'+esc(correctWord)+'</span>';
   } else {
-    displayHTML='<span style="color:var(--white);">'+esc(s.statement)+'</span>';
+    // Show stem only — last word hidden as underscores
+    var hiddenWord='_'.repeat(Math.max(3,correctWord.length));
+    displayHTML='<span style="color:var(--white);">'+esc(deliveredStem)+'</span>'
+      +'<span style="color:var(--muted);letter-spacing:3px;font-size:0.9em;">'+hiddenWord+'</span>';
   }
   document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
   document.getElementById('aud-opts').innerHTML=
@@ -1524,6 +1588,20 @@ function contestantVoteR2(i){
 }
 
 // ── Producer: show votes panel ─────────────────────────────
+function sendToHolding(){
+  // Write holding phase directly — don't rely on readState having existing data
+  // Preserve existing state but override phase
+  readState(function(s){
+    var state=s||{phase:'holding',total:0};
+    state.phase='holding';
+    writeState(state,function(ok){
+      console.log('Holding written:', ok);
+    });
+  });
+  // Also write immediately with minimal state as fallback
+  writeState({phase:'holding',total:0},function(){});
+}
+
 function refreshVotes(){
   readState(function(s){
     var el=document.getElementById('p-votes');
