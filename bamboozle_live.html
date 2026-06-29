@@ -141,6 +141,11 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
 .pulsing{animation:pulse 1.8s ease-in-out infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--purple);border-top-color:var(--magenta);border-radius:50%;animation:spin 0.7s linear infinite;vertical-align:middle;margin-right:6px;}
+.voice-wrap{display:flex;gap:8px;margin-bottom:12px;}
+.voice-wrap .bam-input{flex:1;margin-bottom:0;}
+.mic-btn{width:48px;height:48px;border-radius:50%;border:2px solid var(--purple);background:var(--dark);color:var(--muted);font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;-webkit-appearance:none;appearance:none;}
+.mic-btn:hover{border-color:var(--magenta);color:var(--magenta);}
+.mic-btn.listening{border-color:#FF3333;background:#1A0010;color:#FF3333;animation:pulse 0.8s ease-in-out infinite;}
 </style>
 </head>
 <body>
@@ -956,9 +961,9 @@ function renderBamboozlerR2(s){
     +'<div id="remote-timer" style="margin-bottom:12px;"></div>'
     +'<div class="section-label">Your two Bamboozle answers</div>'
     +'<div class="bam-label">Bamboozle 1</div>'
-    +'<input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off">'
+    +'<div class="voice-wrap"><input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off"><button class="mic-btn" id="mic1" onclick="startVoice(\u0027bam1\u0027,\u0027mic1\u0027)" title="Voice input">&#x1F3A4;</button></div>'
     +'<div class="bam-label">Bamboozle 2</div>'
-    +'<input class="bam-input" id="bam2" type="text" placeholder="Another wrong answer..." autocomplete="off">'
+    +'<div class="voice-wrap"><input class="bam-input" id="bam2" type="text" placeholder="Another wrong answer..." autocomplete="off"><button class="mic-btn" id="mic2" onclick="startVoice(\u0027bam2\u0027,\u0027mic2\u0027)" title="Voice input">&#x1F3A4;</button></div>'
     +'<div class="section-label" style="margin-top:4px;">Where does the correct answer go?</div>'
     +'<div id="orderOpts"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;">Fill in both Bamboozles first</p></div>'
     +'<button class="submit-btn" id="submitBtn" onclick="submitR2bam()" disabled style="margin-top:16px;">Submit answers &#x25BA;</button>'
@@ -1073,7 +1078,7 @@ function renderBamboozlerR4(s){
     +'<div style="background:var(--dark);border:2px solid var(--purple);border-radius:10px;padding:16px;">'
     +'<div class="section-label" style="margin-bottom:8px;">Bamboozle</div>'
     +'<div class="bam-label">Your fake last word</div>'
-    +'<input class="bam-input" id="r4fake" type="text" placeholder="e.g. a type of fish..." autocomplete="off">'
+    +'<div class="voice-wrap"><input class="bam-input" id="r4fake" type="text" placeholder="e.g. a type of fish..." autocomplete="off"><button class="mic-btn" id="mic-r4" onclick="startVoice(\u0027r4fake\u0027,\u0027mic-r4\u0027)" title="Voice input">&#x1F3A4;</button></div>'
     +'<div id="r4preview" style="font-size:13px;color:var(--muted);font-family:Arial,sans-serif;margin-bottom:10px;min-height:18px;"></div>'
     +'<button class="submit-btn" id="r4bamBtn" onclick="submitR4bamCheck()" disabled>&#x1F3AF; Bamboozle!</button>'
     +'</div>';
@@ -1156,7 +1161,7 @@ function renderBamboozlerFinal(s){
     +dots
     +'<div class="section-label">Player '+(playerNum+1)+' of 5 &mdash; pass the iPad</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:12px;">Don\'t show your answer to anyone!</p>'
-    +'<input class="bam-input" id="finalAns" type="text" placeholder="Your Bamboozle answer..." autocomplete="off">'
+    +'<div class="voice-wrap"><input class="bam-input" id="finalAns" type="text" placeholder="Your Bamboozle answer..." autocomplete="off"><button class="mic-btn" id="mic-final" onclick="startVoice(\u0027finalAns\u0027,\u0027mic-final\u0027)" title="Voice input">&#x1F3A4;</button></div>'
     +'<div id="final-ans-err" style="color:#FF6680;font-size:12px;font-family:Arial,sans-serif;margin-bottom:8px;min-height:16px;"></div>'
     +'<button class="submit-btn" id="finalSubmitBtn" onclick="submitFinalBam()">Submit &amp; pass on &#x25BA;</button>';
 }
@@ -1628,6 +1633,71 @@ function renderVotesPanel(s,container){
         +'</div>';
     }).join('')
     +'</div>';
+}
+
+// ── Voice input ────────────────────────────────────────────
+var activeRecognition=null;
+
+function startVoice(inputId, btnId){
+  // Check browser support
+  var SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  if(!SpeechRecognition){
+    alert('Voice input is not supported in this browser. Try Chrome or Safari on iOS 15+.');
+    return;
+  }
+
+  var input=document.getElementById(inputId);
+  var btn=document.getElementById(btnId);
+  if(!input||!btn) return;
+
+  // If already listening, stop
+  if(activeRecognition){
+    activeRecognition.stop();
+    activeRecognition=null;
+    btn.classList.remove('listening');
+    btn.innerHTML='&#x1F3A4;';
+    return;
+  }
+
+  var recognition=new SpeechRecognition();
+  recognition.lang='en-GB';
+  recognition.interimResults=true;
+  recognition.maxAlternatives=1;
+  recognition.continuous=false;
+
+  activeRecognition=recognition;
+  btn.classList.add('listening');
+  btn.innerHTML='&#x23F9;'; // stop icon
+
+  recognition.onresult=function(e){
+    var transcript='';
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      transcript+=e.results[i][0].transcript;
+    }
+    input.value=transcript;
+    // Trigger input event so order options update
+    input.dispatchEvent(new Event('input'));
+  };
+
+  recognition.onerror=function(e){
+    console.log('Voice error:', e.error);
+    btn.classList.remove('listening');
+    btn.innerHTML='&#x1F3A4;';
+    activeRecognition=null;
+    if(e.error==='not-allowed'){
+      alert('Microphone access denied. Please allow microphone access in your browser settings.');
+    }
+  };
+
+  recognition.onend=function(){
+    btn.classList.remove('listening');
+    btn.innerHTML='&#x1F3A4;';
+    activeRecognition=null;
+    // Trigger input event one final time
+    input.dispatchEvent(new Event('input'));
+  };
+
+  recognition.start();
 }
 
 // ── Utilities ──────────────────────────────────────────────
