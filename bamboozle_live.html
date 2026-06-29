@@ -952,6 +952,7 @@ function spellCheck(text,cb){
 var selectedOrder=null;
 function renderBamboozlerR2(s){
   selectedOrder=null;
+  answerOrder=['correct','bam1','bam2']; // reset to default order
   document.getElementById('b-body').innerHTML=
     '<div class="q-card">'
     +'<div class="qlabel">'+(s.roundLabel||'Round 2')+' &mdash; Q'+(s.qIdx+1)+'</div>'
@@ -961,9 +962,9 @@ function renderBamboozlerR2(s){
     +'<div id="remote-timer" style="margin-bottom:12px;"></div>'
     +'<div class="section-label">Your two Bamboozle answers</div>'
     +'<div class="bam-label">Bamboozle 1</div>'
-    +'<div class="voice-wrap"><input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off"><button class="mic-btn" id="mic1" onclick="startVoice(\u0027bam1\u0027,\u0027mic1\u0027)" title="Voice input">&#x1F3A4;</button></div>'
+    +'<div class="voice-wrap"><input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off"><button class="mic-btn" id="mic1" onclick="startVoice(\u0027bam1\u0027,\u0027mic1\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-bam1" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
     +'<div class="bam-label">Bamboozle 2</div>'
-    +'<div class="voice-wrap"><input class="bam-input" id="bam2" type="text" placeholder="Another wrong answer..." autocomplete="off"><button class="mic-btn" id="mic2" onclick="startVoice(\u0027bam2\u0027,\u0027mic2\u0027)" title="Voice input">&#x1F3A4;</button></div>'
+    +'<div class="voice-wrap"><input class="bam-input" id="bam2" type="text" placeholder="Another wrong answer..." autocomplete="off"><button class="mic-btn" id="mic2" onclick="startVoice(\u0027bam2\u0027,\u0027mic2\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-bam2" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
     +'<div class="section-label" style="margin-top:4px;">Where does the correct answer go?</div>'
     +'<div id="orderOpts"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;">Fill in both Bamboozles first</p></div>'
     +'<button class="submit-btn" id="submitBtn" onclick="submitR2bam()" disabled style="margin-top:16px;">Submit answers &#x25BA;</button>'
@@ -1078,7 +1079,7 @@ function renderBamboozlerR4(s){
     +'<div style="background:var(--dark);border:2px solid var(--purple);border-radius:10px;padding:16px;">'
     +'<div class="section-label" style="margin-bottom:8px;">Bamboozle</div>'
     +'<div class="bam-label">Your fake last word</div>'
-    +'<div class="voice-wrap"><input class="bam-input" id="r4fake" type="text" placeholder="e.g. a type of fish..." autocomplete="off"><button class="mic-btn" id="mic-r4" onclick="startVoice(\u0027r4fake\u0027,\u0027mic-r4\u0027)" title="Voice input">&#x1F3A4;</button></div>'
+    +'<div class="voice-wrap"><input class="bam-input" id="r4fake" type="text" placeholder="e.g. a type of fish..." autocomplete="off"><button class="mic-btn" id="mic-r4" onclick="startVoice(\u0027r4fake\u0027,\u0027mic-r4\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-r4fake" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
     +'<div id="r4preview" style="font-size:13px;color:var(--muted);font-family:Arial,sans-serif;margin-bottom:10px;min-height:18px;"></div>'
     +'<button class="submit-btn" id="r4bamBtn" onclick="submitR4bamCheck()" disabled>&#x1F3AF; Bamboozle!</button>'
     +'</div>';
@@ -1161,7 +1162,7 @@ function renderBamboozlerFinal(s){
     +dots
     +'<div class="section-label">Player '+(playerNum+1)+' of 5 &mdash; pass the iPad</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:12px;">Don\'t show your answer to anyone!</p>'
-    +'<div class="voice-wrap"><input class="bam-input" id="finalAns" type="text" placeholder="Your Bamboozle answer..." autocomplete="off"><button class="mic-btn" id="mic-final" onclick="startVoice(\u0027finalAns\u0027,\u0027mic-final\u0027)" title="Voice input">&#x1F3A4;</button></div>'
+    +'<div class="voice-wrap"><input class="bam-input" id="finalAns" type="text" placeholder="Your Bamboozle answer..." autocomplete="off"><button class="mic-btn" id="mic-final" onclick="startVoice(\u0027finalAns\u0027,\u0027mic-final\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-finalAns" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
     +'<div id="final-ans-err" style="color:#FF6680;font-size:12px;font-family:Arial,sans-serif;margin-bottom:8px;min-height:16px;"></div>'
     +'<button class="submit-btn" id="finalSubmitBtn" onclick="submitFinalBam()">Submit &amp; pass on &#x25BA;</button>';
 }
@@ -1638,10 +1639,40 @@ function renderVotesPanel(s,container){
 // ── Voice input ────────────────────────────────────────────
 var activeRecognition=null;
 
+function isIOS(){
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)||
+    (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+}
+
 function startVoice(inputId, btnId){
+  // On iOS, Web Speech API doesn't work reliably in browsers
+  // Direct the user to the native keyboard dictation instead
+  if(isIOS()){
+    var input=document.getElementById(inputId);
+    if(input){
+      input.focus();
+      // Show a brief tooltip
+      var btn=document.getElementById(btnId);
+      if(btn){
+        var orig=btn.innerHTML;
+        btn.innerHTML='&#x2139;';
+        btn.style.borderColor='var(--gold)';
+        btn.style.color='var(--gold)';
+        setTimeout(function(){btn.innerHTML=orig;btn.style.borderColor='';btn.style.color='';},2000);
+      }
+      // Show hint below input
+      var hint=document.getElementById('voice-hint-'+inputId);
+      if(hint){
+        hint.style.display='block';
+        setTimeout(function(){hint.style.display='none';},4000);
+      }
+    }
+    return;
+  }
+
   var SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){
-    alert('Voice input not supported. Try Safari on iOS or Chrome on Android.');
+    alert('Voice input not supported. Try Chrome on Android.');
     return;
   }
 
@@ -1682,14 +1713,48 @@ function startVoice(inputId, btnId){
     try{ recognition.stop(); }catch(e){}
   };
 
+  var retried=false;
   recognition.onerror=function(e){
+    activeRecognition=null;
+    if(e.error==='aborted'&&!retried){
+      // iOS sometimes aborts on first attempt - retry once automatically
+      retried=true;
+      btn.innerHTML='&#x1F3A4; retrying...';
+      setTimeout(function(){
+        try{
+          var r2=new SpeechRecognition();
+          r2.lang='en-GB';
+          r2.continuous=false;
+          r2.interimResults=false;
+          r2.maxAlternatives=1;
+          activeRecognition=r2;
+          r2.onresult=recognition.onresult;
+          r2.onerror=function(e2){
+            btn.classList.remove('listening');
+            btn.innerHTML='&#x1F3A4;';
+            input.placeholder='';
+            activeRecognition=null;
+          };
+          r2.onend=recognition.onend;
+          r2.onspeechend=function(){ try{r2.stop();}catch(ex){} };
+          r2.start();
+          btn.innerHTML='&#x23F9;';
+          input.placeholder='Speak now...';
+        }catch(ex){
+          btn.classList.remove('listening');
+          btn.innerHTML='&#x1F3A4;';
+          input.placeholder='';
+          activeRecognition=null;
+        }
+      },300);
+      return;
+    }
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
     input.placeholder='';
-    activeRecognition=null;
     if(e.error==='not-allowed'){
       alert('Microphone blocked. Go to Settings > Safari > Microphone and allow this site.');
-    } else if(e.error!=='no-speech'&&e.error!=='aborted'){
+    } else if(e.error!=='no-speech'){
       alert('Voice error: '+e.error);
     }
   };
