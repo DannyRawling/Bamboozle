@@ -1639,10 +1639,9 @@ function renderVotesPanel(s,container){
 var activeRecognition=null;
 
 function startVoice(inputId, btnId){
-  // Check browser support
   var SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SpeechRecognition){
-    alert('Voice input is not supported in this browser. Try Chrome or Safari on iOS 15+.');
+    alert('Voice input is not supported in this browser. Try Chrome on Android or Safari on iOS 15+.');
     return;
   }
 
@@ -1650,9 +1649,9 @@ function startVoice(inputId, btnId){
   var btn=document.getElementById(btnId);
   if(!input||!btn) return;
 
-  // If already listening, stop
+  // Stop if already listening
   if(activeRecognition){
-    activeRecognition.stop();
+    try{ activeRecognition.stop(); }catch(e){}
     activeRecognition=null;
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
@@ -1663,19 +1662,25 @@ function startVoice(inputId, btnId){
   recognition.lang='en-GB';
   recognition.interimResults=true;
   recognition.maxAlternatives=1;
-  recognition.continuous=false;
+  recognition.continuous=true; // keep listening until manually stopped
 
   activeRecognition=recognition;
   btn.classList.add('listening');
-  btn.innerHTML='&#x23F9;'; // stop icon
+  btn.innerHTML='&#x23F9;';
+  input.value='';
+  input.placeholder='Listening...';
+
+  recognition.onstart=function(){
+    console.log('Voice started');
+  };
 
   recognition.onresult=function(e){
-    var transcript='';
-    for(var i=e.resultIndex;i<e.results.length;i++){
-      transcript+=e.results[i][0].transcript;
+    var interim='', final='';
+    for(var i=0;i<e.results.length;i++){
+      if(e.results[i].isFinal) final+=e.results[i][0].transcript;
+      else interim+=e.results[i][0].transcript;
     }
-    input.value=transcript;
-    // Trigger input event so order options update
+    input.value=final||interim;
     input.dispatchEvent(new Event('input'));
   };
 
@@ -1683,21 +1688,38 @@ function startVoice(inputId, btnId){
     console.log('Voice error:', e.error);
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
+    input.placeholder='Tap to type or use mic';
     activeRecognition=null;
     if(e.error==='not-allowed'){
-      alert('Microphone access denied. Please allow microphone access in your browser settings.');
+      alert('Microphone access denied. In your browser settings, allow microphone for this site.');
+    } else if(e.error==='no-speech'){
+      // Silently reset - no speech detected
+    } else {
+      alert('Voice error: '+e.error+'. Try tapping the mic again.');
     }
   };
 
   recognition.onend=function(){
+    // On iOS, recognition stops automatically - that's ok
+    // Only reset UI if we didn't manually stop
+    if(activeRecognition){
+      btn.classList.remove('listening');
+      btn.innerHTML='&#x1F3A4;';
+      input.placeholder='Tap to type or use mic';
+      activeRecognition=null;
+      input.dispatchEvent(new Event('input'));
+    }
+  };
+
+  try{
+    recognition.start();
+  } catch(e){
+    console.log('Recognition start error:', e);
     btn.classList.remove('listening');
     btn.innerHTML='&#x1F3A4;';
     activeRecognition=null;
-    // Trigger input event one final time
-    input.dispatchEvent(new Event('input'));
-  };
-
-  recognition.start();
+    alert('Could not start voice input: '+e.message);
+  }
 }
 
 // ── Utilities ──────────────────────────────────────────────
