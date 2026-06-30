@@ -1970,7 +1970,10 @@ function startBamCamera(){
       audioSource:true
     });
 
-    dailyCallObject.join({url:dailyRoomUrl()}).then(function(){
+    var roomUrlToJoin=dailyRoomUrl();
+    console.log('Attempting to join room URL:', roomUrlToJoin);
+
+    dailyCallObject.join({url:roomUrlToJoin}).then(function(){
       camOn=true;
       btn.disabled=false;
       btn.classList.add('active');
@@ -1988,7 +1991,8 @@ function startBamCamera(){
       });
     }).catch(function(err){
       console.log('Daily join error:',err);
-      alert('Could not start camera. Check camera/microphone permissions in your browser settings.');
+      var errDetail=err&&err.message?err.message:JSON.stringify(err);
+      alert('Could not start camera/join room.\n\nError: '+errDetail+'\n\nThis could be: camera/mic blocked, room URL invalid, or Daily.co domain mismatch. Check that your Daily.co domain is exactly: '+DAILY_DOMAIN);
       btn.disabled=false;
       btn.textContent='\u1F4F7 Turn on camera for audience';
       camOn=false;
