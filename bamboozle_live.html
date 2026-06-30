@@ -1896,12 +1896,20 @@ function dailyRoomUrl(){
 
 // Create the room via Daily's REST API if it doesn't exist yet
 function ensureDailyRoom(cb){
-  var roomName='bb-'+sessionCode.toLowerCase();
+  // Sanitize room name: Daily.co requires lowercase letters, numbers, hyphens, underscores only
+  var roomName='bb-'+sessionCode.toLowerCase().replace(/[^a-z0-9]/g,'');
+  console.log('Checking Daily room:', roomName);
+
   fetch('https://api.daily.co/v1/rooms/'+roomName,{
     headers:{'Authorization':'Bearer '+DAILY_API_KEY}
   }).then(function(r){
-    if(r.status===200){cb(true);return;}
-    // Room doesn't exist - create it
+    return r.text().then(function(body){ return {status:r.status, body:body}; });
+  }).then(function(res){
+    console.log('Room check status:', res.status, res.body);
+    if(res.status===200){ cb(true,null); return; }
+    if(res.status===401){ cb(false,'Invalid API key (401 Unauthorized). Double-check the key from Daily.co Developers page.'); return; }
+
+    // Room doesn't exist (404) - create it
     fetch('https://api.daily.co/v1/rooms',{
       method:'POST',
       headers:{'Authorization':'Bearer '+DAILY_API_KEY,'Content-Type':'application/json'},
@@ -1912,11 +1920,18 @@ function ensureDailyRoom(cb){
           enable_screenshare:false,
           start_video_off:false,
           start_audio_off:false,
-          exp:Math.round(Date.now()/1000)+(6*60*60) // expires in 6 hours
+          exp:Math.round(Date.now()/1000)+(6*60*60)
         }
       })
-    }).then(function(r2){cb(r2.ok);}).catch(function(){cb(false);});
-  }).catch(function(){cb(false);});
+    }).then(function(r2){
+      return r2.text().then(function(body2){ return {status:r2.status, body:body2}; });
+    }).then(function(res2){
+      console.log('Room create status:', res2.status, res2.body);
+      if(res2.status===200||res2.status===201){ cb(true,null); }
+      else if(res2.status===401){ cb(false,'Invalid API key (401 Unauthorized).'); }
+      else { cb(false,'Daily.co error ('+res2.status+'): '+res2.body.substring(0,150)); }
+    }).catch(function(err){ cb(false,'Network error creating room: '+err.message); });
+  }).catch(function(err){ cb(false,'Network error checking room: '+err.message); });
 }
 
 // ── Bamboozler camera (broadcaster) ────────────────────────
@@ -1935,9 +1950,9 @@ function startBamCamera(){
   btn.disabled=true;
   btn.textContent='Connecting...';
 
-  ensureDailyRoom(function(ok){
+  ensureDailyRoom(function(ok,errMsg){
     if(!ok){
-      alert('Could not create video room. Check your Daily.co API key.');
+      alert('Video room error: '+(errMsg||'Unknown error. Check your Daily.co API key and domain.'));
       btn.disabled=false;
       btn.textContent='\u1F4F7 Turn on camera for audience';
       return;
