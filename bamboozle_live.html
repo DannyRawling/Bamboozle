@@ -362,6 +362,20 @@ function writeState(state,cb){
   }).then(function(r){ if(cb) cb(r.ok); }).catch(function(){ if(cb) cb(false); });
 }
 
+// Several places in the Producer flow replace the entire shared state
+// object wholesale (new question, holding screen, etc.) rather than
+// merging into the existing one. That's intentional for most fields
+// (votes/claims/timers should reset), but it was also silently wiping the
+// videoLive flag every time, which is why the audience's camera feed kept
+// dropping the instant a question loaded. This wraps those call sites so
+// videoLive survives the reset.
+function writeStateKeepVideo(newState,cb){
+  readState(function(old){
+    if(old&&old.videoLive) newState.videoLive=old.videoLive;
+    writeState(newState,cb);
+  });
+}
+
 // Generic versions keyed by an arbitrary string, used for WebRTC signaling
 // so each viewer's handshake lives in its own row instead of sharing (and
 // risking collisions with) the single game-state row above.
@@ -581,7 +595,7 @@ function startProducer(){
   if(isNaN(pQIdx)||isNaN(pAIdx)){document.getElementById('p-file-err').textContent='Select Question and Answer columns.';return;}
   buildQuestions(pQIdx,pAIdx,pRIdx,pR1Idx,rf);
   if(!questions.length){document.getElementById('p-file-err').textContent='No questions found.';return;}
-  writeState({phase:'idle',qIdx:0,total:questions.length},function(ok){
+  writeStateKeepVideo({phase:'idle',qIdx:0,total:questions.length},function(ok){
     if(!ok){document.getElementById('p-file-err').textContent='Could not connect to Supabase. Check table and RLS settings.';return;}
     showScreen('producer');
     renderProducer(0);
@@ -626,7 +640,7 @@ function producerNav(qi){
   stopCountdown();
   if(pollTimer){clearInterval(pollTimer);pollTimer=null;}
   if(r1ProducerPollTimer){clearInterval(r1ProducerPollTimer);r1ProducerPollTimer=null;}
-  writeState({phase:'idle',qIdx:qi,total:questions.length,votes:{},claims:{}},function(){renderProducer(qi);});
+  writeStateKeepVideo({phase:'idle',qIdx:qi,total:questions.length,votes:{},claims:{}},function(){renderProducer(qi);});
 }
 
 function roundLabel(mode,round){
@@ -704,7 +718,7 @@ function pushR1(qi){
   var q=questions[qi];
   // claims: {answerIndex: contestantName} - first to claim wins that answer
   var state={phase:'r1',qIdx:qi,question:q.q,r1answers:q.r1answers,r1correct:q.r1correct,claims:{},revealed:false,total:questions.length};
-  writeState(state,function(){});
+  writeStateKeepVideo(state,function(){});
 }
 
 // ── Producer R2/R3 controls ────────────────────────────────
@@ -732,7 +746,7 @@ function cueQuestion(qi){
   var q=questions[qi];
   var label=roundLabel(q.mode,q.round);
   var state={phase:'r2_cued',qIdx:qi,question:q.q,correct:q.correct,mode:q.mode,roundLabel:label,total:questions.length};
-  writeState(state,function(){
+  writeStateKeepVideo(state,function(){
     document.getElementById('r2-controls-'+qi).style.display='block';
     // Poll for bamboozler submission
     startRevealPoll(qi);
@@ -829,7 +843,7 @@ function r4Controls(q,qi){
 function cueR4(qi){
   var q=questions[qi];
   var state={phase:'r4_cued',qIdx:qi,question:q.q,correct:q.correct,total:questions.length};
-  writeState(state,function(ok){
+  writeStateKeepVideo(state,function(ok){
     if(!ok){alert('Could not sync. Check Supabase.');return;}
     var cueBtn=document.getElementById('r4-cue-btn');
     if(cueBtn)cueBtn.style.display='none';
@@ -871,7 +885,7 @@ function finalControls(q,qi){
 var finalPollTimer=null;
 function cueFinal(qi){
   var q=questions[qi];
-  writeState({phase:'final_entry',qIdx:qi,question:q.q,correct:q.correct,answers:[],total:questions.length},function(ok){
+  writeStateKeepVideo({phase:'final_entry',qIdx:qi,question:q.q,correct:q.correct,answers:[],total:questions.length},function(ok){
     if(!ok){alert('Could not sync. Check Supabase.');return;}
     var statusEl=document.getElementById('final-status');
     var revealBtn=document.getElementById('final-reveal-btn');
@@ -903,7 +917,7 @@ function startFinalReveal(qi){
     for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
     var cp=pool.indexOf(correct);
     var state={phase:'final_reveal',qIdx:qi,question:questions[qi].q,options:pool,correctPos:cp,reveal:0,struckFinal:[],total:questions.length};
-    writeState(state,function(){
+    writeStateKeepVideo(state,function(){
       document.getElementById('final-reveal-btn').style.display='none';
       renderFinalRevealControls(state);
     });
@@ -1745,7 +1759,7 @@ function sendToHolding(){
     });
   });
   // Also write immediately with minimal state as fallback
-  writeState({phase:'holding',total:0},function(){});
+  writeStateKeepVideo({phase:'holding',total:0},function(){});
 }
 
 function refreshVotes(){
