@@ -2064,6 +2064,15 @@ function bamConnectToViewer(id){
 
     pc.oniceconnectionstatechange=function(){
       console.log('Bamboozler ICE connection state for viewer '+id+':',pc.iceConnectionState);
+      if(pc.iceConnectionState==='failed'||pc.iceConnectionState==='disconnected'){
+        setTimeout(function(){
+          if(bamPeers[id]===pc&&(pc.iceConnectionState==='failed'||pc.iceConnectionState==='disconnected')){
+            try{ pc.close(); }catch(e){}
+            delete bamPeers[id];
+            delete bamSeenOfferIce[id];
+          }
+        },3000);
+      }
     };
     pc.onconnectionstatechange=function(){
       console.log('Bamboozler connection state for viewer '+id+':',pc.connectionState);
@@ -2149,6 +2158,9 @@ function joinAudienceVideo(){
 
   pc.oniceconnectionstatechange=function(){
     console.log('Audience ICE connection state:',pc.iceConnectionState);
+    if(pc.iceConnectionState==='failed'||pc.iceConnectionState==='disconnected'){
+      audScheduleReconnect(pc);
+    }
   };
   pc.onconnectionstatechange=function(){
     console.log('Audience connection state:',pc.connectionState);
@@ -2213,6 +2225,25 @@ function unmuteAudienceVideo(){
   remoteVideo.muted=false;
   remoteVideo.play().catch(function(err){ console.log('Unmute play() failed:',err); });
   if(btn) btn.style.display='none';
+}
+
+var audReconnectTimer=null;
+function audScheduleReconnect(pcThatFailed){
+  if(audReconnectTimer) return; // already scheduled
+  audReconnectTimer=setTimeout(function(){
+    audReconnectTimer=null;
+    if(audPeer!==pcThatFailed) return; // a newer connection already replaced this one
+    if(pcThatFailed.iceConnectionState!=='failed'&&pcThatFailed.iceConnectionState!=='disconnected') return; // it recovered on its own
+    console.log('Reconnecting audience video after connection drop...');
+    if(webrtcPollTimer){ clearInterval(webrtcPollTimer); webrtcPollTimer=null; }
+    if(audHeartbeat){ clearInterval(audHeartbeat); audHeartbeat=null; }
+    try{ pcThatFailed.close(); }catch(e){}
+    audPeer=null;
+    audConnecting=false;
+    audConnected=false;
+    audViewerId=null; // fresh id avoids any stale state on the Bamboozler's side
+    joinAudienceVideo();
+  },3000); // grace period in case it's a brief blip that self-heals
 }
 
 function stopAudienceVideoView(){
