@@ -161,7 +161,6 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
 .video-toggle-btn{padding:10px;border-radius:8px;border:1px solid var(--purple);background:var(--dark);color:var(--muted);font-family:Arial,sans-serif;font-size:12px;cursor:pointer;width:100%;margin-bottom:12px;-webkit-appearance:none;appearance:none;}
 .video-toggle-btn.active{border-color:var(--magenta);color:var(--magenta);background:#2A0050;}
 </style>
-<script src="https://unpkg.com/@daily-co/daily-js@latest/dist/daily-iframe.js"></script>
 </head>
 <body>
 
@@ -327,11 +326,16 @@ window.addEventListener('load', function(){
 var SB_URL='https://tesigdxowhpegruygwde.supabase.co';
 var SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlc2lnZHhvd2hwZWdydXlnd2RlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzMDgxNjcsImV4cCI6MjA5Nzg4NDE2N30.o7dMGv7GqRD3BFChRv33mgF0zfXEcm0SkDPmcyeLewk';
 var PRODUCER_PIN='1234'; // change this to secure the producer screen
-var DAILY_DOMAIN='bamboozle';
-var DAILY_API_KEY='0fe875d0d4c5812083035e01ac6245f3eb091f01ec463b0d1538962fa57be7c3';
-var dailyCallObject=null; // Bamboozler's outgoing call object
-var dailyViewObject=null; // Audience's viewing call object
-var dailyRoomReady=false; // set true once ensureDailyRoom has succeeded (pre-warmed on screen load)
+// WebRTC config: free public STUN server (no TURN — see note in startBamCamera)
+var RTC_CONFIG={iceServers:[{urls:'stun:stun.l.google.com:19302'}]};
+var localStream=null;             // Bamboozler's own camera+mic stream
+var bamPeers={};                  // Bamboozler side: viewerId -> RTCPeerConnection
+var bamSeenOfferIce={};           // viewerId -> count of viewer ICE candidates already applied
+var bamSeenAnswerIce={};          // viewerId -> count of our own ICE candidates already sent
+var audPeer=null;                 // Audience side: our one RTCPeerConnection to the Bamboozler
+var audViewerId=null;             // Audience side: our own random viewer id for this session
+var audSeenAnswerIce={};          // count of Bamboozler ICE candidates already applied (single counter, keyed by nothing since only one peer)
+var webrtcPollTimer=null;         // dedicated poll loop for signaling (separate from the game-state poll)
 
 // ── State ──────────────────────────────────────────────────
 var role=null, sessionCode=null;
@@ -355,6 +359,24 @@ function writeState(state,cb){
     method:'POST',
     headers:Object.assign({},sbH(),{'Prefer':'resolution=merge-duplicates'}),
     body:JSON.stringify({key:stKey(),value:JSON.stringify(state)})
+  }).then(function(r){ if(cb) cb(r.ok); }).catch(function(){ if(cb) cb(false); });
+}
+
+// Generic versions keyed by an arbitrary string, used for WebRTC signaling
+// so each viewer's handshake lives in its own row instead of sharing (and
+// risking collisions with) the single game-state row above.
+function readKey(key,cb){
+  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(key)+'&select=value&limit=1',{headers:sbH()})
+    .then(function(r){return r.json();})
+    .then(function(d){ cb(d&&d.length?JSON.parse(d[0].value):null); })
+    .catch(function(){ cb(null); });
+}
+
+function writeKey(key,value,cb){
+  fetch(SB_URL+'/rest/v1/bamboozle_sessions',{
+    method:'POST',
+    headers:Object.assign({},sbH(),{'Prefer':'resolution=merge-duplicates'}),
+    body:JSON.stringify({key:key,value:JSON.stringify(value)})
   }).then(function(r){ if(cb) cb(r.ok); }).catch(function(){ if(cb) cb(false); });
 }
 
@@ -478,7 +500,6 @@ function doJoin(){
     var audCode=document.getElementById('aud-code');
     if(audCode) audCode.textContent=sessionCode;
     startPoll();
-    joinAudienceVideo(); // connect to Bamboozler's camera feed if live
     return;
   }
   if(r==='contestant'){
@@ -495,16 +516,6 @@ function doJoin(){
     var badge=document.getElementById('b-badge');
     if(badge) badge.textContent='Session: '+sessionCode;
     startBamboozlerPoll();
-    // Pre-warm the Daily.co room now (network round-trip) so that when the
-    // user later taps "Turn on camera", join() fires immediately — still
-    // inside that tap's gesture window. iOS Safari revokes camera/mic
-    // permission if getUserMedia happens even a moment after an async
-    // network call finishes, so this must NOT be done inside the button's
-    // click handler.
-    ensureDailyRoom(function(ok,errMsg){
-      dailyRoomReady=ok;
-      if(!ok) console.log('Daily room pre-warm failed:',errMsg);
-    });
     return;
   }
   if(r==='producer'){
@@ -1315,6 +1326,12 @@ function startPoll(){
 var audWaitDefault='<div class="logo"><span class="p">BAMB</span><span class="g">O</span><span class="p">OZLE</span></div><div class="session-big" id="aud-code2"></div><p class="pulsing">Waiting to start…</p>';
 
 function renderAudience(s){
+  // Connect to (or disconnect from) the Bamboozler's camera feed based on
+  // the shared videoLive flag. This runs every time state changes, which
+  // is exactly when videoLive would flip.
+  if(s&&s.videoLive&&!audPeer&&!audConnecting){ joinAudienceVideo(); }
+  if(s&&!s.videoLive&&(audPeer||audConnecting)){ stopAudienceVideoView(); }
+
   var wait=document.getElementById('aud-wait');
   var main=document.getElementById('aud-main');
   var done=document.getElementById('aud-done');
@@ -1900,50 +1917,26 @@ function startVoice(inputId, btnId){
   }
 }
 
-// ── Daily.co video ─────────────────────────────────────────
-function dailyRoomUrl(){
-  return 'https://'+DAILY_DOMAIN+'.daily.co/bb-'+sessionCode.toLowerCase();
-}
+// ── WebRTC video (native, no third-party service) ───────────
+// Broadcast model: the Bamboozler's device connects directly (peer-to-peer)
+// to each audience device. Fine for small audiences (a handful of viewers);
+// each extra viewer adds one more direct upload connection from the
+// Bamboozler's device. Uses a free public STUN server only (no TURN), so it
+// relies on both sides being reachable via standard NAT traversal — this
+// works on the vast majority of home/mobile networks but could fail behind
+// unusually strict corporate firewalls.
+//
+// Signaling (the SDP offer/answer + ICE candidate exchange needed to set up
+// the connection) piggybacks on the same Supabase table already used for
+// game state, but using dedicated per-viewer keys so it doesn't collide
+// with the shared game-state row:
+//   bblive_<code>_viddir   — directory of viewers wanting to connect
+//   bblive_<code>_vo_<id>  — viewer's offer + ICE candidates (viewer writes, Bamboozler reads)
+//   bblive_<code>_va_<id>  — Bamboozler's answer + ICE candidates (Bamboozler writes, viewer reads)
 
-// Create the room via Daily's REST API if it doesn't exist yet
-function ensureDailyRoom(cb){
-  // Sanitize room name: Daily.co requires lowercase letters, numbers, hyphens, underscores only
-  var roomName='bb-'+sessionCode.toLowerCase().replace(/[^a-z0-9]/g,'');
-  console.log('Checking Daily room:', roomName);
-
-  fetch('https://api.daily.co/v1/rooms/'+roomName,{
-    headers:{'Authorization':'Bearer '+DAILY_API_KEY}
-  }).then(function(r){
-    return r.text().then(function(body){ return {status:r.status, body:body}; });
-  }).then(function(res){
-    console.log('Room check status:', res.status, res.body);
-    if(res.status===200){ cb(true,null); return; }
-    if(res.status===401){ cb(false,'Invalid API key (401 Unauthorized). Double-check the key from Daily.co Developers page.'); return; }
-
-    // Room doesn't exist (404) - create it
-    fetch('https://api.daily.co/v1/rooms',{
-      method:'POST',
-      headers:{'Authorization':'Bearer '+DAILY_API_KEY,'Content-Type':'application/json'},
-      body:JSON.stringify({
-        name:roomName,
-        properties:{
-          enable_chat:false,
-          enable_screenshare:false,
-          start_video_off:false,
-          start_audio_off:false,
-          exp:Math.round(Date.now()/1000)+(6*60*60)
-        }
-      })
-    }).then(function(r2){
-      return r2.text().then(function(body2){ return {status:r2.status, body:body2}; });
-    }).then(function(res2){
-      console.log('Room create status:', res2.status, res2.body);
-      if(res2.status===200||res2.status===201){ cb(true,null); }
-      else if(res2.status===401){ cb(false,'Invalid API key (401 Unauthorized).'); }
-      else { cb(false,'Daily.co error ('+res2.status+'): '+res2.body.substring(0,150)); }
-    }).catch(function(err){ cb(false,'Network error creating room: '+err.message); });
-  }).catch(function(err){ cb(false,'Network error checking room: '+err.message); });
-}
+function dirKey(){ return stKey()+'_viddir'; }
+function offerKey(id){ return stKey()+'_vo_'+id; }
+function answerKey(id){ return stKey()+'_va_'+id; }
 
 // ── Bamboozler camera (broadcaster) ────────────────────────
 var camOn=false;
@@ -1961,79 +1954,115 @@ function startBamCamera(){
   btn.disabled=true;
   btn.textContent='Connecting...';
 
-  function reallyJoin(){
-    if(!window.DailyIframe){
-      alert('Video library failed to load. Check your internet connection and refresh.');
-      btn.disabled=false;
-      btn.textContent='\u1F4F7 Turn on camera for audience';
-      return;
-    }
+  // getUserMedia is called directly here, synchronously with the tap that
+  // triggered toggleBamCamera() — no network round-trip beforehand. This is
+  // what iOS Safari requires to grant the camera/mic permission prompt.
+  navigator.mediaDevices.getUserMedia({video:true,audio:true}).then(function(stream){
+    localStream=stream;
+    camOn=true;
+    btn.disabled=false;
+    btn.classList.add('active');
+    btn.textContent='\u1F4F9 Camera live \u2014 tap to stop';
+    wrap.style.display='block';
+    document.getElementById('bam-live-badge').style.display='flex';
 
-    dailyCallObject=window.DailyIframe.createCallObject({
-      videoSource:true,
-      audioSource:true
+    var localVideo=document.getElementById('bam-local-video');
+    localVideo.srcObject=stream;
+
+    // Tell the audience (via the shared game state, which only the
+    // Bamboozler writes, so this is a safe single-writer update) that
+    // video is live, and reset the viewer directory for a fresh session.
+    readState(function(s){
+      s=s||{};
+      s.videoLive=true;
+      writeState(s,function(){});
     });
+    writeKey(dirKey(),[],function(){});
 
-    var roomUrlToJoin=dailyRoomUrl();
-    console.log('Attempting to join room URL:', roomUrlToJoin);
+    bamPeers={};
+    bamSeenOfferIce={};
+    if(webrtcPollTimer) clearInterval(webrtcPollTimer);
+    webrtcPollTimer=setInterval(bamWebrtcTick,1000);
+  }).catch(function(err){
+    console.log('getUserMedia error:',err);
+    alert('Could not start camera. Check camera/microphone permissions in your browser settings.\n\n('+(err&&err.name?err.name:err)+')');
+    btn.disabled=false;
+    btn.textContent='\u1F4F7 Turn on camera for audience';
+    camOn=false;
+  });
+}
 
-    dailyCallObject.join({url:roomUrlToJoin}).then(function(){
-      camOn=true;
-      btn.disabled=false;
-      btn.classList.add('active');
-      btn.textContent='\u1F4F9 Camera live \u2014 tap to stop';
-      wrap.style.display='block';
-      document.getElementById('bam-live-badge').style.display='flex';
+function bamWebrtcTick(){
+  if(!camOn||!localStream) return;
 
-      // Attach local video stream to the video element
-      var localVideo=document.getElementById('bam-local-video');
-      dailyCallObject.on('track-started',function(ev){
-        if(ev.participant&&ev.participant.local&&ev.track.kind==='video'){
-          var stream=new MediaStream([ev.track]);
-          localVideo.srcObject=stream;
-        }
+  readKey(dirKey(),function(dir){
+    dir=dir||[];
+    var now=Date.now();
+    dir.forEach(function(entry){
+      if(!entry||!entry.id) return;
+      if(bamPeers[entry.id]) return;
+      if(now-(entry.ts||0)>30000) return;
+      bamConnectToViewer(entry.id);
+    });
+  });
+
+  Object.keys(bamPeers).forEach(function(id){
+    var pc=bamPeers[id];
+    if(!pc||pc.connectionState==='closed') return;
+    readKey(offerKey(id),function(data){
+      if(!data||!data.ice) return;
+      var seen=bamSeenOfferIce[id]||0;
+      for(var i=seen;i<data.ice.length;++i){
+        try{ pc.addIceCandidate(new RTCIceCandidate(data.ice[i])); }catch(e){ console.log('addIceCandidate (bam) failed:',e); }
+      }
+      bamSeenOfferIce[id]=data.ice.length;
+    });
+  });
+}
+
+function bamConnectToViewer(id){
+  readKey(offerKey(id),function(data){
+    if(!data||!data.offer) return;
+    var pc=new RTCPeerConnection(RTC_CONFIG);
+    bamPeers[id]=pc;
+    bamSeenOfferIce[id]=(data.ice||[]).length;
+    var myIce=[];
+
+    localStream.getTracks().forEach(function(track){ pc.addTrack(track,localStream); });
+
+    pc.onicecandidate=function(ev){
+      if(!ev.candidate) return;
+      myIce.push(ev.candidate.toJSON());
+      writeKey(answerKey(id),{answer:pc.currentLocalDescription,ice:myIce},function(){});
+    };
+
+    pc.setRemoteDescription(new RTCSessionDescription(data.offer)).then(function(){
+      return pc.createAnswer();
+    }).then(function(answer){
+      return pc.setLocalDescription(answer);
+    }).then(function(){
+      writeKey(answerKey(id),{answer:pc.localDescription,ice:myIce},function(){});
+      (data.ice||[]).forEach(function(c){
+        try{ pc.addIceCandidate(new RTCIceCandidate(c)); }catch(e){}
       });
     }).catch(function(err){
-      console.log('Daily join error:',err);
-      var errDetail=err&&err.message?err.message:JSON.stringify(err);
-      alert('Could not start camera/join room.\n\nError: '+errDetail+'\n\nThis could be: camera/mic blocked, room URL invalid, or Daily.co domain mismatch. Check that your Daily.co domain is exactly: '+DAILY_DOMAIN);
-      btn.disabled=false;
-      btn.textContent='\u1F4F7 Turn on camera for audience';
-      camOn=false;
+      console.log('Error answering viewer '+id+':',err);
+      try{ pc.close(); }catch(e){}
+      delete bamPeers[id];
     });
-  }
-
-  if(dailyRoomReady){
-    // Room already exists — join() runs synchronously off this tap, which
-    // is required for iOS Safari to grant the camera/mic permission prompt.
-    reallyJoin();
-  } else {
-    // Pre-warm hasn't finished yet (rare — e.g. very fast tap after page
-    // load, or the pre-warm request failed). This path goes through a
-    // network call before join(), which iOS Safari may treat as no longer
-    // tied to the tap and silently block. Retrying the pre-warm here is
-    // still better than nothing, but if this branch is hit often on iOS,
-    // the real fix is to wait a moment after the screen loads before
-    // enabling the button.
-    ensureDailyRoom(function(ok,errMsg){
-      if(!ok){
-        alert('Video room error: '+(errMsg||'Unknown error. Check your Daily.co API key and domain.'));
-        btn.disabled=false;
-        btn.textContent='\u1F4F7 Turn on camera for audience';
-        return;
-      }
-      dailyRoomReady=true;
-      reallyJoin();
-    });
-  }
+  });
 }
 
 function stopBamCamera(){
-  if(dailyCallObject){
-    dailyCallObject.leave().then(function(){
-      dailyCallObject.destroy();
-      dailyCallObject=null;
-    });
+  if(webrtcPollTimer){ clearInterval(webrtcPollTimer); webrtcPollTimer=null; }
+  Object.keys(bamPeers).forEach(function(id){
+    try{ bamPeers[id].close(); }catch(e){}
+  });
+  bamPeers={};
+  bamSeenOfferIce={};
+  if(localStream){
+    localStream.getTracks().forEach(function(t){ t.stop(); });
+    localStream=null;
   }
   camOn=false;
   var btn=document.getElementById('video-toggle-btn');
@@ -2041,36 +2070,104 @@ function stopBamCamera(){
   btn.textContent='\u1F4F7 Turn on camera for audience';
   document.getElementById('bam-video-wrap').style.display='none';
   document.getElementById('bam-live-badge').style.display='none';
+
+  readState(function(s){
+    s=s||{};
+    s.videoLive=false;
+    writeState(s,function(){});
+  });
+  writeKey(dirKey(),[],function(){});
 }
 
 // ── Audience viewer ─────────────────────────────────────────
-var viewerJoined=false;
+var audConnecting=false;
+var audConnected=false;
+var audHeartbeat=null;
+
 function joinAudienceVideo(){
-  if(viewerJoined||!window.DailyIframe)return;
+  if(audPeer||audConnecting) return;
+  audConnecting=true;
+  audConnected=false;
 
-  dailyViewObject=window.DailyIframe.createCallObject({
-    videoSource:false, // audience doesn't broadcast
-    audioSource:false
-  });
+  if(!audViewerId) audViewerId='v'+Date.now().toString(36)+Math.random().toString(36).slice(2,8);
 
-  dailyViewObject.join({url:dailyRoomUrl()}).then(function(){
-    viewerJoined=true;
-    dailyViewObject.on('track-started',function(ev){
-      if(ev.participant&&!ev.participant.local&&ev.track.kind==='video'){
-        var remoteVideo=document.getElementById('aud-remote-video');
-        var stream=new MediaStream([ev.track]);
-        remoteVideo.srcObject=stream;
-        document.getElementById('aud-video-section').style.display='block';
-      }
-    });
-    dailyViewObject.on('participant-left',function(ev){
-      // If the Bamboozler leaves/stops camera, hide video section
-      document.getElementById('aud-video-section').style.display='none';
-    });
+  var pc=new RTCPeerConnection(RTC_CONFIG);
+  audPeer=pc;
+  var myIce=[];
+  audSeenAnswerIce={count:0};
+
+  pc.addTransceiver('video',{direction:'recvonly'});
+  pc.addTransceiver('audio',{direction:'recvonly'});
+
+  pc.ontrack=function(ev){
+    var remoteVideo=document.getElementById('aud-remote-video');
+    if(remoteVideo && ev.streams && ev.streams[0]){
+      remoteVideo.srcObject=ev.streams[0];
+      document.getElementById('aud-video-section').style.display='block';
+    }
+  };
+
+  pc.onicecandidate=function(ev){
+    if(!ev.candidate) return;
+    myIce.push(ev.candidate.toJSON());
+    writeKey(offerKey(audViewerId),{offer:pc.currentLocalDescription,ice:myIce},function(){});
+  };
+
+  pc.createOffer().then(function(offer){
+    return pc.setLocalDescription(offer);
+  }).then(function(){
+    writeKey(offerKey(audViewerId),{offer:pc.localDescription,ice:myIce},function(){});
+    audRegisterInDirectory();
+    audHeartbeat=setInterval(function(){
+      if(audConnected){ clearInterval(audHeartbeat); audHeartbeat=null; return; }
+      audRegisterInDirectory();
+    },4000);
+    if(webrtcPollTimer) clearInterval(webrtcPollTimer);
+    webrtcPollTimer=setInterval(audWebrtcTick,1000);
   }).catch(function(err){
-    console.log('Audience video join error:',err);
-    // Fail silently - video is an enhancement, not required for the game to work
+    console.log('Could not create offer:',err);
+    audConnecting=false;
+    try{ pc.close(); }catch(e){}
+    audPeer=null;
   });
+}
+
+function audRegisterInDirectory(){
+  readKey(dirKey(),function(dir){
+    dir=dir||[];
+    dir=dir.filter(function(e){ return e&&e.id!==audViewerId; });
+    dir.push({id:audViewerId,ts:Date.now()});
+    writeKey(dirKey(),dir,function(){});
+  });
+}
+
+function audWebrtcTick(){
+  if(!audPeer) return;
+  readKey(answerKey(audViewerId),function(data){
+    if(!data||!data.answer||!audPeer) return;
+    if(!audConnected){
+      audPeer.setRemoteDescription(new RTCSessionDescription(data.answer)).then(function(){
+        audConnected=true;
+        audConnecting=false;
+      }).catch(function(err){ console.log('setRemoteDescription (aud) failed:',err); });
+    }
+    var seen=audSeenAnswerIce.count||0;
+    for(var i=seen;i<(data.ice||[]).length;++i){
+      try{ audPeer.addIceCandidate(new RTCIceCandidate(data.ice[i])); }catch(e){ console.log('addIceCandidate (aud) failed:',e); }
+    }
+    audSeenAnswerIce.count=(data.ice||[]).length;
+  });
+}
+
+function stopAudienceVideoView(){
+  if(webrtcPollTimer){ clearInterval(webrtcPollTimer); webrtcPollTimer=null; }
+  if(audHeartbeat){ clearInterval(audHeartbeat); audHeartbeat=null; }
+  if(audPeer){ try{ audPeer.close(); }catch(e){} audPeer=null; }
+  audConnecting=false;
+  audConnected=false;
+  var remoteVideo=document.getElementById('aud-remote-video');
+  if(remoteVideo) remoteVideo.srcObject=null;
+  document.getElementById('aud-video-section').style.display='none';
 }
 
 // Update the lower-third graphic on the audience video overlay
