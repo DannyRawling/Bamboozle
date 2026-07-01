@@ -2047,7 +2047,7 @@ function bamConnectToViewer(id){
     pc.onicecandidate=function(ev){
       if(!ev.candidate) return;
       myIce.push(ev.candidate.toJSON());
-      writeKey(answerKey(id),{answer:pc.currentLocalDescription,ice:myIce},function(){});
+      writeKey(answerKey(id),{answer:pc.localDescription,ice:myIce},function(){});
     };
 
     pc.setRemoteDescription(new RTCSessionDescription(data.offer)).then(function(){
@@ -2124,7 +2124,7 @@ function joinAudienceVideo(){
   pc.onicecandidate=function(ev){
     if(!ev.candidate) return;
     myIce.push(ev.candidate.toJSON());
-    writeKey(offerKey(audViewerId),{offer:pc.currentLocalDescription,ice:myIce},function(){});
+    writeKey(offerKey(audViewerId),{offer:pc.localDescription,ice:myIce},function(){});
   };
 
   pc.createOffer().then(function(offer){
