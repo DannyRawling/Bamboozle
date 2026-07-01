@@ -113,7 +113,16 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
 .aud-wait{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;text-align:center;}
 .aud-wait .session-big{font-size:clamp(36px,10vw,64px);letter-spacing:12px;color:var(--gold);margin:16px 0;}
 .aud-wait p{color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:1px;}
-.aud-main{flex:1;display:none;flex-direction:column;}
+.aud-main{flex:1;display:none;flex-direction:column;position:relative;}
+
+/* TV mode: whole audience screen collapses to a single 16:9 frame with the
+   video as the backdrop and everything else overlaid on top of it. Applied
+   via a class toggle whenever videoLive is true. */
+.tv-mode .aud-top{display:none;}
+.tv-mode #aud-video-section{padding:0;}
+.tv-mode .video-wrap{border-radius:0;margin-bottom:0;}
+.tv-mode #aud-opts{position:absolute;left:0;right:0;top:0;z-index:6;padding:clamp(12px,3vw,28px);background:linear-gradient(180deg,rgba(0,0,0,0.75),transparent 75%);}
+.tv-mode #aud-footer{position:absolute;left:0;right:0;bottom:0;z-index:6;background:rgba(0,0,0,0.6);border-top:none;}
 .aud-top{background:var(--purple);border-bottom:3px solid var(--magenta);padding:clamp(13px,2.5vw,22px) clamp(16px,4vw,40px);}
 .aud-top .qlabel{font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:6px;font-family:Arial,sans-serif;}
 .aud-top .qtext{font-size:clamp(16px,2.8vw,28px);color:var(--white);line-height:1.4;}
@@ -1347,6 +1356,9 @@ function renderAudience(s){
   if(s&&s.videoLive&&!audPeer&&!audConnecting){ joinAudienceVideo(); }
   if(s&&!s.videoLive&&(audPeer||audConnecting)){ stopAudienceVideoView(); }
 
+  var audMainEl=document.getElementById('aud-main');
+  if(audMainEl) audMainEl.classList.toggle('tv-mode',!!(s&&s.videoLive));
+
   var wait=document.getElementById('aud-wait');
   var main=document.getElementById('aud-main');
   var done=document.getElementById('aud-done');
@@ -1447,7 +1459,6 @@ function renderAudCued(s){
     :'';
   document.getElementById('aud-opts').innerHTML=
     '<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;align-items:center;justify-content:center;padding:40px 40px;">'
-    +'<div style="font-size:clamp(18px,3vw,32px);color:var(--white);text-align:center;line-height:1.5;margin-bottom:24px;">'+esc(s.question)+'</div>'
     +timerHTML2
     +(!s.timerEnd?'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;margin-top:16px;">Bamboozler is thinking…</p>':'')
     +'</div>';
