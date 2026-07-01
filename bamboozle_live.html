@@ -331,6 +331,7 @@ var DAILY_DOMAIN='bamboozle';
 var DAILY_API_KEY='0fe875d0d4c5812083035e01ac6245f3eb091f01ec463b0d1538962fa57be7c3';
 var dailyCallObject=null; // Bamboozler's outgoing call object
 var dailyViewObject=null; // Audience's viewing call object
+var dailyRoomReady=false; // set true once ensureDailyRoom has succeeded (pre-warmed on screen load)
 
 // ── State ──────────────────────────────────────────────────
 var role=null, sessionCode=null;
@@ -494,6 +495,16 @@ function doJoin(){
     var badge=document.getElementById('b-badge');
     if(badge) badge.textContent='Session: '+sessionCode;
     startBamboozlerPoll();
+    // Pre-warm the Daily.co room now (network round-trip) so that when the
+    // user later taps "Turn on camera", join() fires immediately — still
+    // inside that tap's gesture window. iOS Safari revokes camera/mic
+    // permission if getUserMedia happens even a moment after an async
+    // network call finishes, so this must NOT be done inside the button's
+    // click handler.
+    ensureDailyRoom(function(ok,errMsg){
+      dailyRoomReady=ok;
+      if(!ok) console.log('Daily room pre-warm failed:',errMsg);
+    });
     return;
   }
   if(r==='producer'){
@@ -1950,14 +1961,7 @@ function startBamCamera(){
   btn.disabled=true;
   btn.textContent='Connecting...';
 
-  ensureDailyRoom(function(ok,errMsg){
-    if(!ok){
-      alert('Video room error: '+(errMsg||'Unknown error. Check your Daily.co API key and domain.'));
-      btn.disabled=false;
-      btn.textContent='\u1F4F7 Turn on camera for audience';
-      return;
-    }
-
+  function reallyJoin(){
     if(!window.DailyIframe){
       alert('Video library failed to load. Check your internet connection and refresh.');
       btn.disabled=false;
@@ -1997,7 +2001,31 @@ function startBamCamera(){
       btn.textContent='\u1F4F7 Turn on camera for audience';
       camOn=false;
     });
-  });
+  }
+
+  if(dailyRoomReady){
+    // Room already exists — join() runs synchronously off this tap, which
+    // is required for iOS Safari to grant the camera/mic permission prompt.
+    reallyJoin();
+  } else {
+    // Pre-warm hasn't finished yet (rare — e.g. very fast tap after page
+    // load, or the pre-warm request failed). This path goes through a
+    // network call before join(), which iOS Safari may treat as no longer
+    // tied to the tap and silently block. Retrying the pre-warm here is
+    // still better than nothing, but if this branch is hit often on iOS,
+    // the real fix is to wait a moment after the screen loads before
+    // enabling the button.
+    ensureDailyRoom(function(ok,errMsg){
+      if(!ok){
+        alert('Video room error: '+(errMsg||'Unknown error. Check your Daily.co API key and domain.'));
+        btn.disabled=false;
+        btn.textContent='\u1F4F7 Turn on camera for audience';
+        return;
+      }
+      dailyRoomReady=true;
+      reallyJoin();
+    });
+  }
 }
 
 function stopBamCamera(){
