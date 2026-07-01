@@ -115,18 +115,33 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
 .aud-wait p{color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:1px;}
 .aud-main{flex:1;display:none;flex-direction:column;position:relative;}
 
-/* TV mode: whole audience screen collapses to a single 16:9 frame with the
-   video as the backdrop and everything else overlaid on top of it. Applied
-   via a class toggle whenever videoLive is true. */
+/* TV mode: whole audience screen becomes a single 16:9 composite frame —
+   video boxed into the top 2/3, question + answer options as a lower-third
+   graphic panel across the bottom 1/3. Applied via a class toggle on
+   #aud-main whenever videoLive is true. */
+.tv-mode{aspect-ratio:16/9;width:100%;max-height:100vh;position:relative;overflow:hidden;background:#000;}
+.aud-video-section{padding:16px 16px 0;}
 .tv-mode .aud-top{display:none;}
-.tv-mode #aud-video-section{padding:0;}
-.tv-mode .video-wrap{border-radius:0;margin-bottom:0;}
-.tv-mode #aud-opts{position:absolute;left:0;right:0;top:0;z-index:6;padding:clamp(12px,3vw,28px);background:linear-gradient(180deg,rgba(0,0,0,0.75),transparent 75%);}
-.tv-mode #aud-footer{position:absolute;left:0;right:0;bottom:0;z-index:6;background:rgba(0,0,0,0.6);border-top:none;}
+.tv-mode #aud-video-section{position:absolute;top:0;left:0;right:0;height:66.667%;padding:0;}
+.tv-mode #aud-video-section .video-wrap{width:100%;height:100%;aspect-ratio:unset;border-radius:0;margin-bottom:0;}
+.tv-mode .video-lower-third{display:none;} /* question now lives in the lower-third panel below, not overlaid on the video itself */
+.tv-mode #aud-opts{position:absolute;left:0;right:0;top:66.667%;bottom:0;z-index:6;margin:0;background:linear-gradient(180deg,#1A0030,#0A0016);border-top:3px solid var(--magenta);padding:clamp(8px,1.5vw,16px) clamp(14px,3vw,32px);display:flex;flex-direction:column;justify-content:center;overflow:hidden;}
+.tv-mode #aud-opts .opts-grid{display:grid;gap:clamp(6px,1vw,12px);flex:1;align-content:center;}
+.tv-mode #aud-footer{display:none;}
+
+.lt-qheader{margin-bottom:clamp(6px,1vw,10px);}
+.lt-qheader .lt-round{font-size:10px;letter-spacing:3px;color:var(--gold);text-transform:uppercase;font-family:Arial,sans-serif;font-weight:700;margin-bottom:2px;}
+.lt-qheader .lt-question{font-size:clamp(14px,2.4vw,24px);color:#fff;font-family:'Arial Black',Arial,sans-serif;line-height:1.25;}
+#aud-main:not(.tv-mode) .lt-qheader{display:none;} /* fallback (no video): the old header above the grid already shows this */
+
+/* Per-answer lock-in graphic — pops onto a cell the instant it's claimed */
+@keyframes lockPop{0%{transform:translate(-50%,-50%) scale(0) rotate(-14deg);opacity:0;}60%{transform:translate(-50%,-50%) scale(1.18) rotate(5deg);opacity:1;}100%{transform:translate(-50%,-50%) scale(1) rotate(-5deg);opacity:1;}}
+.lock-badge{position:absolute;top:50%;left:50%;background:var(--magenta);color:#fff;font-family:'Arial Black',Arial,sans-serif;font-size:clamp(10px,1.6vw,15px);font-weight:900;letter-spacing:1px;padding:6px 14px;border-radius:6px;box-shadow:0 4px 14px rgba(0,0,0,0.5);border:2px solid #fff;text-transform:uppercase;white-space:nowrap;animation:lockPop 0.45s cubic-bezier(.34,1.56,.64,1);z-index:3;}
 .aud-top{background:var(--purple);border-bottom:3px solid var(--magenta);padding:clamp(13px,2.5vw,22px) clamp(16px,4vw,40px);}
 .aud-top .qlabel{font-size:11px;letter-spacing:3px;color:var(--gold);margin-bottom:6px;font-family:Arial,sans-serif;}
 .aud-top .qtext{font-size:clamp(16px,2.8vw,28px);color:var(--white);line-height:1.4;}
-.aud-options{flex:1;display:grid;}
+.aud-options{flex:1;display:flex;flex-direction:column;}
+.opts-grid{display:grid;flex:1;}
 .opt-cell{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:clamp(14px,3vw,36px) clamp(10px,2vw,24px);border-right:1px solid #1A0030;text-align:center;transition:background 0.4s;position:relative;}
 .opt-cell:last-child{border-right:none;}
 .opt-cell.blank{background:#060010;}
@@ -288,7 +303,7 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
     <p style="margin-top:20px;font-family:Arial,sans-serif;font-size:clamp(13px,2vw,18px);letter-spacing:4px;color:var(--muted);text-transform:uppercase;">Do you have an answer for everything?</p>
   </div>
   <div class="aud-main" id="aud-main">
-    <div id="aud-video-section" style="display:none;padding:16px 16px 0;">
+    <div id="aud-video-section" class="aud-video-section" style="display:none;">
       <div class="video-wrap" id="aud-video-wrap">
         <video id="aud-remote-video" autoplay playsinline muted></video>
         <button id="aud-unmute-btn" onclick="unmuteAudienceVideo()" style="display:none;position:absolute;top:10px;right:10px;z-index:5;padding:8px 14px;border-radius:20px;border:none;background:rgba(0,0,0,0.7);color:#fff;font-family:Arial,sans-serif;font-size:12px;cursor:pointer;">&#x1F507; Tap for sound</button>
@@ -1450,39 +1465,48 @@ function setAudHeader(label,text){
   document.getElementById('aud-qtext').textContent=text;
 }
 
+// Question header shown inside the lower-third options panel (TV mode
+// only — hidden via CSS in the phone fallback layout, where the separate
+// header above the grid already shows this).
+function ltHeader(label,question){
+  return '<div class="lt-qheader"><div class="lt-round">'+esc(label)+'</div><div class="lt-question">'+esc(question)+'</div></div>';
+}
+
 function renderAudCued(s){
-  setAudHeader((s.roundLabel||s.mode||'Round')+' — Question '+(s.qIdx+1)+' of '+s.total, s.question);
-  updateVideoLowerThird(s.roundLabel||s.mode||'Round',s.question);
-  document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
+  var label=s.roundLabel||s.mode||'Round';
+  setAudHeader(label+' — Question '+(s.qIdx+1)+' of '+s.total, s.question);
+  updateVideoLowerThird(label,s.question);
   var timerHTML2=s.timerEnd
     ?'<div id="aud-remote-timer" style="margin-top:20px;width:100%;max-width:320px;">'+buildTimerHTML(s)+'</div>'
     :'';
   document.getElementById('aud-opts').innerHTML=
-    '<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;align-items:center;justify-content:center;padding:40px 40px;">'
+    ltHeader(label,s.question)
+    +'<div class="opts-grid" style="grid-template-columns:1fr;">'
+    +'<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;align-items:center;justify-content:center;padding:40px 40px;">'
     +timerHTML2
     +(!s.timerEnd?'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;margin-top:16px;">Bamboozler is thinking…</p>':'')
-    +'</div>';
+    +'</div></div>';
   document.getElementById('aud-footer').textContent='';
   if(s.timerEnd) tickRemoteTimer('aud-remote-timer', s);
 }
 
 function renderAudR1(s){
+  if(lastR1QIdx!==s.qIdx){ lastR1QIdx=s.qIdx; lastR1Claims={}; }
   setAudHeader('Round 1 \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
   updateVideoLowerThird('Round 1',s.question);
   if(!s.r1answers||!s.r1answers.length){
-    document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
-    document.getElementById('aud-opts').innerHTML='<div class="opt-cell shown" style="grid-column:1/-1;"><div class="opt-text" style="color:var(--muted);font-family:Arial,sans-serif;">No answers found.</div></div>';
+    document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
+      +'<div class="opts-grid" style="grid-template-columns:1fr;"><div class="opt-cell shown" style="grid-column:1/-1;"><div class="opt-text" style="color:var(--muted);font-family:Arial,sans-serif;">No answers found.</div></div></div>';
     return;
   }
   var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
   var claims=s.claims||{};
   var revealed=s.revealed||false;
   var cols=s.r1answers.length<=6?2:3;
-  document.getElementById('aud-opts').style.gridTemplateColumns='repeat('+cols+',1fr)';
 
   if(revealed){
     // Reveal screen — show who claimed what
-    document.getElementById('aud-opts').innerHTML=s.r1answers.map(function(ans,i){
+    var gridHTML=s.r1answers.map(function(ans,i){
       var claimedBy=claims[i];
       var isCorrect=i===s.r1correct;
       var cls=isCorrect?'correct':claimedBy?'shown':'struck';
@@ -1492,34 +1516,55 @@ function renderAudR1(s){
         +(claimedBy?'<div style="margin-top:8px;font-size:12px;color:var(--gold);font-family:Arial,sans-serif;font-weight:900;">'+esc(claimedBy)+'</div>':'')
         +'</div>';
     }).join('');
+    document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
+      +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+'</div>';
     document.getElementById('aud-footer').textContent='Fastest finger results';
   } else {
-    // Live race — claimed answers disappear (blank cell), unclaimed answers shown
+    // Live race — a claimed answer gets a LOCKED badge the instant it's
+    // claimed, then goes blank once the badge has had a moment to register.
     var unclaimedCount=s.r1answers.filter(function(_,i){return !claims[i];}).length;
-    document.getElementById('aud-opts').innerHTML=s.r1answers.map(function(ans,i){
+    var hasNewClaim=false;
+    var gridHTML=s.r1answers.map(function(ans,i){
       var claimedBy=claims[i];
       if(claimedBy){
-        return '<div class="opt-cell blank"><div class="opt-letter">'+labels[i]+'</div></div>';
+        var isNew=lastR1Claims[i]===undefined;
+        if(isNew) hasNewClaim=true;
+        return '<div class="opt-cell '+(isNew?'shown':'blank')+'" style="position:relative;">'
+          +'<div class="opt-letter">'+labels[i]+'</div>'
+          +(isNew?'<div class="lock-badge">Locked In</div>':'')
+          +'</div>';
       }
       return '<div class="opt-cell shown">'
         +'<div class="opt-letter">'+labels[i]+'</div>'
         +'<div class="opt-text" style="font-size:clamp(12px,2vw,19px);">'+esc(ans)+'</div>'
         +'</div>';
     }).join('');
+    document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
+      +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+'</div>';
     document.getElementById('aud-footer').innerHTML='<span class="pulsing">'+unclaimedCount+' answer'+(unclaimedCount!==1?'s':'')+' remaining \u2014 fastest finger first!</span>';
+    lastR1Claims=claims;
+    if(hasNewClaim){
+      // After the lock badge has had a moment to show, re-render without it
+    // so the cell settles into its plain blank state.
+      setTimeout(function(){ readState(function(fresh){ if(fresh&&fresh.phase==='r1'&&!fresh.revealed) renderAudR1(fresh); }); },1400);
+    }
   }
 }
+var lastR1Claims={};
+var lastR1QIdx=null;
 
 
 function renderAudR2(s){
-  setAudHeader((s.roundLabel||'Round 2')+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
+  var label=s.roundLabel||'Round 2';
+  setAudHeader(label+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
   var rev=s.reveal||0;
-  document.getElementById('aud-opts').style.gridTemplateColumns='repeat(3,1fr)';
-  document.getElementById('aud-opts').innerHTML=['A','B','C'].map(function(l,i){
+  var gridHTML=['A','B','C'].map(function(l,i){
     var shown=rev>i,isCorrect=rev>=4&&i===s.correctPos;
     var cls=isCorrect?'correct':shown?'shown':'blank';
     return '<div class="opt-cell '+cls+'"><div class="opt-letter">'+l+'</div><div class="opt-text">'+(shown?esc(s.options[i]):'')+'</div></div>';
   }).join('');
+  document.getElementById('aud-opts').innerHTML=ltHeader(label,s.question)
+    +'<div class="opts-grid" style="grid-template-columns:repeat(3,1fr);">'+gridHTML+'</div>';
   document.getElementById('aud-footer').innerHTML=
     rev===0?'<span class="pulsing">Options incoming\u2026</span>':
     rev===1?'Option A revealed':rev===2?'A &amp; B revealed':
@@ -1529,14 +1574,12 @@ function renderAudR2(s){
 function renderAudR4(s){
   if(s.phase==='r4_cued'){
     setAudHeader('Round 4 — Question '+(s.qIdx+1)+' of '+s.total,'');
-    document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
-    // Hide last word of question from audience while Bamboozler decides
     var cq=s.question||'';
     var cqSpace=cq.lastIndexOf(' ');
     var cqStem=cqSpace>=0?cq.substring(0,cqSpace+1):cq+' ';
     var cqHidden='_'.repeat(Math.max(3,(cq.substring(cqSpace+1)||'').length));
     var cqDisplay=esc(cqStem)+'<span style="color:var(--muted);letter-spacing:3px;">'+cqHidden+'</span>';
-    document.getElementById('aud-opts').innerHTML='<div class="opt-cell shown" style="grid-column:1/-1;padding:60px 40px;text-align:center;flex-direction:column;"><div style="font-size:clamp(18px,3vw,30px);color:var(--white);line-height:1.5;margin-bottom:32px;">'+cqDisplay+'</div><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;">Bamboozler is deciding…</p></div>';
+    document.getElementById('aud-opts').innerHTML='<div class="opts-grid" style="grid-template-columns:1fr;"><div class="opt-cell shown" style="grid-column:1/-1;padding:60px 40px;text-align:center;flex-direction:column;"><div style="font-size:clamp(18px,3vw,30px);color:var(--white);line-height:1.5;margin-bottom:32px;">'+cqDisplay+'</div><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;letter-spacing:2px;">Bamboozler is deciding…</p></div></div>';
     document.getElementById('aud-footer').textContent='True or Bamboozle?';
     return;
   }
@@ -1564,9 +1607,9 @@ function renderAudR4(s){
     displayHTML='<span style="color:var(--white);">'+esc(deliveredStem)+'</span>'
       +'<span style="color:var(--muted);letter-spacing:3px;font-size:0.9em;">'+hiddenWord+'</span>';
   }
-  document.getElementById('aud-opts').style.gridTemplateColumns='1fr';
   document.getElementById('aud-opts').innerHTML=
-    '<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:clamp(28px,5vw,56px) clamp(20px,4vw,48px);">'
+    '<div class="opts-grid" style="grid-template-columns:1fr;">'
+    +'<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:clamp(28px,5vw,56px) clamp(20px,4vw,48px);">'
     +'<div style="font-size:clamp(20px,3.5vw,38px);color:var(--white);line-height:1.5;text-align:center;margin-bottom:clamp(16px,3vw,32px);">'+displayHTML+'</div>'
     +(!s.revealed
       ?'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;width:100%;max-width:560px;">'
@@ -1577,7 +1620,7 @@ function renderAudR4(s){
        +'<div style="font-size:clamp(13px,2vw,18px);letter-spacing:3px;color:'+(s.truthful?'var(--gold)':'var(--magenta)')+';text-transform:uppercase;margin-bottom:8px;font-family:Arial,sans-serif;">'+(s.truthful?'It was TRUE!':'It was a BAMBOOZLE!')+'</div>'
        +'<div style="font-size:clamp(15px,2.5vw,24px);color:var(--white);">'+esc(s.fullStatement)+'</div>'
        +'</div>')
-    +'</div>';
+    +'</div></div>';
   document.getElementById('aud-footer').innerHTML=s.revealed?(s.truthful?'\u2714 Delivered truthfully':'\u1F3AF Bamboozled!'):'True or Bamboozle?';
 }
 
@@ -1586,10 +1629,9 @@ function renderAudFinal(s){
   var rev=s.reveal||0,n=s.options.length;
   var struck=s.struckFinal||[];
   var cols=n<=3?3:n<=4?4:3;
-  document.getElementById('aud-opts').style.gridTemplateColumns='repeat('+cols+',1fr)';
   var labels=['A','B','C','D','E','F'];
   var correctRevealed=rev>n;
-  document.getElementById('aud-opts').innerHTML=s.options.map(function(opt,i){
+  var gridHTML=s.options.map(function(opt,i){
     var shown=rev>i;
     var isCorrect=correctRevealed&&i===s.correctPos;
     var isStruck=struck.indexOf(i)!==-1&&!isCorrect;
@@ -1600,6 +1642,8 @@ function renderAudFinal(s){
       +'<div class="opt-text" style="font-size:clamp(12px,2vw,20px);">'+(shown?esc(opt):'')+'</div>'
       +'</div>';
   }).join('');
+  document.getElementById('aud-opts').innerHTML=ltHeader('The Final',s.question)
+    +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+'</div>';
   document.getElementById('aud-footer').innerHTML=rev===0?'<span class="pulsing">The Bamboozles are coming\u2026</span>':rev<=n?rev+' of '+n+' revealed':'\u2605 Correct answer revealed!';
 }
 
