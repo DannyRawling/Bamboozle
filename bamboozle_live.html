@@ -281,7 +281,8 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
   <div class="aud-main" id="aud-main">
     <div id="aud-video-section" style="display:none;padding:16px 16px 0;">
       <div class="video-wrap" id="aud-video-wrap">
-        <video id="aud-remote-video" autoplay playsinline></video>
+        <video id="aud-remote-video" autoplay playsinline muted></video>
+        <button id="aud-unmute-btn" onclick="unmuteAudienceVideo()" style="display:none;position:absolute;top:10px;right:10px;z-index:5;padding:8px 14px;border-radius:20px;border:none;background:rgba(0,0,0,0.7);color:#fff;font-family:Arial,sans-serif;font-size:12px;cursor:pointer;">&#x1F507; Tap for sound</button>
         <div class="video-lower-third">
           <div class="vlt-round" id="vlt-round">Round 2</div>
           <div class="vlt-question" id="vlt-question"></div>
@@ -2050,6 +2051,13 @@ function bamConnectToViewer(id){
       writeKey(answerKey(id),{answer:pc.localDescription,ice:myIce},function(){});
     };
 
+    pc.oniceconnectionstatechange=function(){
+      console.log('Bamboozler ICE connection state for viewer '+id+':',pc.iceConnectionState);
+    };
+    pc.onconnectionstatechange=function(){
+      console.log('Bamboozler connection state for viewer '+id+':',pc.connectionState);
+    };
+
     pc.setRemoteDescription(new RTCSessionDescription(data.offer)).then(function(){
       return pc.createAnswer();
     }).then(function(answer){
@@ -2118,7 +2126,21 @@ function joinAudienceVideo(){
     if(remoteVideo && ev.streams && ev.streams[0]){
       remoteVideo.srcObject=ev.streams[0];
       document.getElementById('aud-video-section').style.display='block';
+      var p=remoteVideo.play();
+      if(p&&p.then){
+        p.then(function(){
+          var btn=document.getElementById('aud-unmute-btn');
+          if(btn) btn.style.display='block';
+        }).catch(function(err){ console.log('Remote video play() failed even muted:',err); });
+      }
     }
+  };
+
+  pc.oniceconnectionstatechange=function(){
+    console.log('Audience ICE connection state:',pc.iceConnectionState);
+  };
+  pc.onconnectionstatechange=function(){
+    console.log('Audience connection state:',pc.connectionState);
   };
 
   pc.onicecandidate=function(ev){
@@ -2171,6 +2193,15 @@ function audWebrtcTick(){
     }
     audSeenAnswerIce.count=(data.ice||[]).length;
   });
+}
+
+function unmuteAudienceVideo(){
+  var remoteVideo=document.getElementById('aud-remote-video');
+  var btn=document.getElementById('aud-unmute-btn');
+  if(!remoteVideo) return;
+  remoteVideo.muted=false;
+  remoteVideo.play().catch(function(err){ console.log('Unmute play() failed:',err); });
+  if(btn) btn.style.display='none';
 }
 
 function stopAudienceVideoView(){
