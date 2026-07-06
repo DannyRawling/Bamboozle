@@ -1443,8 +1443,14 @@ function renderAudience(s){
   if(s&&s.videoLive&&!audPeer&&!audConnecting){ joinAudienceVideo(); }
   if(s&&!s.videoLive&&(audPeer||audConnecting)){ stopAudienceVideoView(); }
 
+  // Round 1 doesn't use the video composite layout — it often has more
+  // answers than fit comfortably in the bottom-third panel, so it always
+  // gets the plain full-width grid regardless of whether video is live.
+  var isR1=!!(s&&s.phase==='r1');
   var audMainEl=document.getElementById('aud-main');
-  if(audMainEl) audMainEl.classList.toggle('tv-mode',!!(s&&s.videoLive));
+  if(audMainEl) audMainEl.classList.toggle('tv-mode',!!(s&&s.videoLive&&!isR1));
+  var vidSection=document.getElementById('aud-video-section');
+  if(vidSection&&isR1) vidSection.style.display='none';
 
   var wait=document.getElementById('aud-wait');
   var main=document.getElementById('aud-main');
