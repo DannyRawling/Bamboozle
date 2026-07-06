@@ -770,7 +770,7 @@ function waitingHTML(){
 function cueQuestion(qi){
   var q=questions[qi];
   var label=roundLabel(q.mode,q.round);
-  var state={phase:'r2_cued',qIdx:qi,question:q.q,correct:q.correct,mode:q.mode,roundLabel:label,total:questions.length};
+  var state={phase:'r2_cued',qIdx:qi,question:q.q,correct:q.correct,mode:q.mode,roundLabel:label,total:questions.length,r2Placed:[false,false,false]};
   writeStateKeepVideo(state,function(){
     document.getElementById('r2-controls-'+qi).style.display='block';
     // Poll for bamboozler submission
@@ -1084,34 +1084,101 @@ function spellCheck(text,cb){
 
 // R2 Bamboozler entry
 var selectedOrder=null;
+var r2Cards=null;
 function renderBamboozlerR2(s){
-  selectedOrder=null;
-  answerOrder=['correct','bam1','bam2']; // reset to default order
+  r2Cards={
+    correct:{label:'Correct answer',text:s.correct,editable:false,locked:false,pos:null},
+    bam1:{label:'Bamboozle 1',text:'',editable:true,locked:false,pos:null},
+    bam2:{label:'Bamboozle 2',text:'',editable:true,locked:false,pos:null}
+  };
   document.getElementById('b-body').innerHTML=
     '<div class="q-card">'
     +'<div class="qlabel">'+(s.roundLabel||'Round 2')+' &mdash; Q'+(s.qIdx+1)+'</div>'
     +'<div class="qtext">'+esc(s.question)+'</div>'
-    +'<div class="correct"><span>Correct: </span>'+esc(s.correct)+'</div>'
     +'</div>'
     +'<div id="remote-timer" style="margin-bottom:12px;"></div>'
-    +'<div class="section-label">Your two Bamboozle answers</div>'
-    +'<div class="bam-label">Bamboozle 1</div>'
-    +'<div class="voice-wrap"><input class="bam-input" id="bam1" type="text" placeholder="A convincing wrong answer..." autocomplete="off"><button class="mic-btn" id="mic1" onclick="startVoice(\u0027bam1\u0027,\u0027mic1\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-bam1" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
-    +'<div class="bam-label">Bamboozle 2</div>'
-    +'<div class="voice-wrap"><input class="bam-input" id="bam2" type="text" placeholder="Another wrong answer..." autocomplete="off"><button class="mic-btn" id="mic2" onclick="startVoice(\u0027bam2\u0027,\u0027mic2\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-bam2" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
-    +'<div class="section-label" style="margin-top:4px;">Where does the correct answer go?</div>'
-    +'<div id="orderOpts"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;">Fill in both Bamboozles first</p></div>'
-    +'<button class="submit-btn" id="submitBtn" onclick="submitR2bam()" disabled style="margin-top:16px;">Submit answers &#x25BA;</button>'
-    +'<div id="bam-spell-preview" style="display:none;margin-top:16px;background:var(--panel);border:1px solid var(--gold);border-radius:10px;padding:14px;">'
-    +'<div style="font-size:10px;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:10px;font-family:Arial,sans-serif;">Spelling check &mdash; confirm before sending to producer</div>'
-    +'<div id="bam-spell-content"></div>'
-    +'<button class="submit-btn" id="confirmSpellBtn" style="margin-top:12px;" onclick="confirmAndSubmit()">Confirm &amp; submit &#x2713;</button>'
-    +'<button onclick="cancelSpell()" style="width:100%;margin-top:8px;padding:11px;background:transparent;border:1px solid var(--purple);border-radius:8px;color:var(--muted);font-family:Arial,sans-serif;font-size:12px;cursor:pointer;">Edit answers</button>'
-    +'</div>';
-  document.getElementById('bam1').addEventListener('input',renderOrderOpts);
-  document.getElementById('bam2').addEventListener('input',renderOrderOpts);
-  // Start ticking immediately if timer is active
+    +'<div class="section-label">Lock each answer into a position \u2014 one at a time, any order</div>'
+    +'<div id="r2-cards"></div>';
+  renderR2Cards();
   if(s.timerEnd) { injectTimerIntoBam(s); }
+}
+
+function renderR2Cards(){
+  var labels=['A','B','C'];
+  var taken=Object.keys(r2Cards).filter(function(k){return r2Cards[k].locked;}).map(function(k){return r2Cards[k].pos;});
+  document.getElementById('r2-cards').innerHTML=Object.keys(r2Cards).map(function(key){
+    var card=r2Cards[key];
+    if(card.locked){
+      return '<div class="q-card" style="border-color:var(--gold);opacity:0.7;">'
+        +'<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">'
+        +'<div><strong style="color:var(--gold);font-family:Arial,sans-serif;font-size:12px;">'+card.label+'</strong><br><span style="color:var(--white);font-family:Arial,sans-serif;font-size:14px;">'+esc(card.text)+'</span></div>'
+        +'<div style="background:var(--magenta);color:#fff;font-weight:900;padding:6px 14px;border-radius:6px;font-family:\'Arial Black\',Arial,sans-serif;font-size:13px;white-space:nowrap;">\u2192 '+labels[card.pos]+'</div>'
+        +'</div></div>';
+    }
+    var inputHTML=card.editable
+      ?'<div class="voice-wrap"><input class="bam-input" id="r2input-'+key+'" type="text" placeholder="A convincing wrong answer..." value="'+esc(card.text)+'" autocomplete="off"><button class="mic-btn" id="r2mic-'+key+'" onclick="startVoice(\'r2input-'+key+'\',\'r2mic-'+key+'\')" title="Voice input">\u1F3A4</button></div>'
+      :'<div class="qtext" style="margin:8px 0;font-size:15px;">'+esc(card.text)+'</div>';
+    var posButtons=labels.map(function(l,i){
+      var used=taken.indexOf(i)!==-1;
+      return '<button class="submit-btn" style="flex:1;padding:10px;margin-top:0;'+(used?'opacity:0.3;cursor:not-allowed;':'')+'" '+(used?'disabled':'onclick="lockR2Answer(\''+key+'\','+i+')"')+'>'+l+'</button>';
+    }).join('');
+    return '<div class="q-card">'
+      +'<div class="bam-label">'+card.label+'</div>'
+      +inputHTML
+      +'<div class="section-label" style="margin-top:8px;">Lock into position:</div>'
+      +'<div style="display:flex;gap:8px;">'+posButtons+'</div>'
+      +'</div>';
+  }).join('');
+}
+
+function lockR2Answer(key,pos){
+  var card=r2Cards[key];
+  if(card.editable){
+    var input=document.getElementById('r2input-'+key);
+    var text=input?input.value.trim():'';
+    if(!text){ alert('Type an answer first.'); return; }
+    document.getElementById('r2-cards').querySelectorAll('button').forEach(function(b){b.disabled=true;});
+    spellCheck(text,function(corrected){
+      card.text=(corrected&&corrected!==text&&!confirm('Spelling suggestion:\n\n"'+corrected+'"\n\nUse the corrected version? (Cancel keeps what you typed)'))?text:corrected;
+      finalizeR2Lock(key,pos);
+    });
+  } else {
+    finalizeR2Lock(key,pos);
+  }
+}
+
+function finalizeR2Lock(key,pos){
+  var card=r2Cards[key];
+  card.locked=true;
+  card.pos=pos;
+  renderR2Cards();
+  readState(function(s){
+    if(!s) return;
+    s.r2Placed=s.r2Placed||[false,false,false];
+    s.r2Placed[pos]=true;
+    writeStateKeepVideo(s,function(){});
+  });
+  var allLocked=Object.keys(r2Cards).every(function(k){return r2Cards[k].locked;});
+  if(allLocked){
+    readState(function(s){
+      if(!s) return;
+      var opts=['','',''];
+      Object.keys(r2Cards).forEach(function(k){ opts[r2Cards[k].pos]=r2Cards[k].text; });
+      s.phase='r2';
+      s.options=opts;
+      s.correctPos=r2Cards.correct.pos;
+      s.reveal=0;
+      s.justLocked=Date.now();
+      writeStateKeepVideo(s,function(){
+        document.getElementById('b-body').innerHTML=
+          '<div style="text-align:center;padding:40px 20px;">'
+          +'<div style="font-size:40px;margin-bottom:16px;">&#x2713;</div>'
+          +'<p style="color:var(--gold);font-family:Arial,sans-serif;font-size:16px;">All three answers locked!</p>'
+          +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Waiting for the Producer to reveal them.</p>'
+          +'</div>';
+      });
+    });
+  }
 }
 
 
@@ -1387,19 +1454,7 @@ function renderAudience(s){
     if(s.phase==='r1') renderAudR1(s);
     else if(s.phase==='r2') renderAudR2(s);
     else if(s.phase==='r2_cued'){
-      var existingTimer=document.getElementById('aud-remote-timer');
-      if(s.timerEnd&&existingTimer){
-        // Timer div exists - just update it
-        existingTimer.innerHTML=buildTimerHTML(s);
-        tickRemoteTimer('aud-remote-timer',s);
-      } else if(s.timerEnd&&!existingTimer){
-        // Timer started but no div yet - re-render to show it
-        renderAudCued(s);
-      } else if(!existingTimer){
-        // First render
-        renderAudCued(s);
-      }
-      // else: no timer and div exists - leave as is
+      renderAudR2Cued(s);
     }
     else if(s.phase==='r4'||s.phase==='r4_cued') renderAudR4(s);
     else renderAudFinal(s);
@@ -1458,6 +1513,37 @@ function renderAudience(s){
   wait.innerHTML='<div class="logo"><span class="p">BAMB</span><span class="g">O</span><span class="p">OZLE</span></div>'
     +'<div style="font-size:clamp(36px,10vw,64px);letter-spacing:12px;color:var(--gold);margin:16px 0;">'+sessionCode+'</div>'
     +'<p class="pulsing">Waiting to start…</p>';
+}
+
+var lastR2CuedPlaced=[];
+var lastR2CuedQIdx=null;
+function renderAudR2Cued(s){
+  if(lastR2CuedQIdx!==s.qIdx){ lastR2CuedQIdx=s.qIdx; lastR2CuedPlaced=[]; }
+  var label=s.roundLabel||'Round 2';
+  setAudHeader(label+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
+  updateVideoLowerThird(label,s.question);
+  var placed=s.r2Placed||[false,false,false];
+  var labels=['A','B','C'];
+  var hasNewLock=false;
+  var gridHTML=labels.map(function(l,i){
+    var isLocked=placed[i];
+    var isNew=isLocked&&!lastR2CuedPlaced[i];
+    if(isNew) hasNewLock=true;
+    return '<div class="opt-cell '+(isLocked?'shown':'blank')+'" style="position:relative;">'
+      +'<div class="opt-letter">'+l+'</div>'
+      +(isNew?'<div class="lock-badge">Locked In</div>':(isLocked?'<div style="font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:6px;">Locked</div>':''))
+      +'</div>';
+  }).join('');
+  var timerHTML2=s.timerEnd?'<div id="aud-remote-timer" style="grid-column:1/-1;margin-top:8px;text-align:center;">'+buildTimerHTML(s)+'</div>':'';
+  document.getElementById('aud-opts').innerHTML=ltHeader(label,s.question)
+    +'<div class="opts-grid" style="grid-template-columns:repeat(3,1fr);">'+gridHTML+timerHTML2+'</div>';
+  var lockedCount=placed.filter(Boolean).length;
+  document.getElementById('aud-footer').innerHTML='<span class="pulsing">'+lockedCount+' of 3 answers locked \u2014 Bamboozler is arranging\u2026</span>';
+  lastR2CuedPlaced=placed.slice();
+  if(s.timerEnd) tickRemoteTimer('aud-remote-timer',s);
+  if(hasNewLock){
+    setTimeout(function(){ readState(function(fresh){ if(fresh&&fresh.phase==='r2_cued') renderAudR2Cued(fresh); }); },1400);
+  }
 }
 
 function setAudHeader(label,text){
@@ -1762,7 +1848,28 @@ function checkR1AutoComplete(s){
 }
 
 // Round 2/3 — A B C selection
+function renderContestantR2Cued(s){
+  var placed=s.r2Placed||[false,false,false];
+  var labels=['A','B','C'];
+  document.getElementById('c-body').innerHTML=
+    '<div class="q-card" style="border-color:var(--magenta);">'
+    +'<div class="qlabel">'+(s.roundLabel||'Round 2')+'</div>'
+    +'<div class="qtext">'+esc(s.question)+'</div>'
+    +'</div>'
+    +'<div class="section-label">Bamboozler is arranging answers\u2026</div>'
+    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'
+    +labels.map(function(l,i){
+      var isLocked=placed[i];
+      return '<div style="position:relative;padding:20px;text-align:center;border-radius:10px;background:'+(isLocked?'var(--panel)':'#060010')+';border:2px solid '+(isLocked?'var(--gold)':'var(--purple)')+';">'
+        +'<div style="font-size:20px;font-weight:900;color:var(--white);">'+l+'</div>'
+        +(isLocked?'<div style="margin-top:6px;font-size:11px;color:var(--gold);font-family:Arial,sans-serif;letter-spacing:1px;">LOCKED</div>':'<div style="margin-top:6px;font-size:11px;color:var(--muted);font-family:Arial,sans-serif;">waiting</div>')
+        +'</div>';
+    }).join('')
+    +'</div>';
+}
+
 function renderContestantR2(s){
+  if(s.phase==='r2_cued'){ renderContestantR2Cued(s); return; }
   var rev=s.reveal||0;
   var votes=s.votes||{};
   var myCurrentVote=votes[contestantName]!==undefined?votes[contestantName]:null;
