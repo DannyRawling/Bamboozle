@@ -253,11 +253,11 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
 
 <!-- ══ PRODUCER MAIN ══ -->
 <div id="producer" class="screen">
-  <div class="p-header">
+  <div class="p-header" style="flex-wrap:wrap;gap:8px;row-gap:8px;">
     <div class="logo-sm"><span style="color:#B44FEE">BAMB</span><span style="color:var(--gold)">O</span><span style="color:#B44FEE">OZLE</span></div>
-    <div style="display:flex;align-items:center;gap:10px;">
-      <button onclick="sendToTitles()" style="padding:6px 12px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;">&#x1F3AC; Titles</button>
-      <button onclick="sendToHolding()" style="padding:6px 12px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;">&#x23F8; Holding</button>
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button onclick="sendToTitles()" style="padding:6px 10px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3AC; Titles</button>
+      <button onclick="sendToHolding()" style="padding:6px 10px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x23F8; Holding</button>
       <div class="p-badge" id="p-badge"></div>
     </div>
   </div>
