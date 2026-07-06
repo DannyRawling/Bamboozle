@@ -316,6 +316,7 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
   </div>
   <audio id="aud-tension-audio" preload="auto"></audio>
   <audio id="aud-lockin-sfx" preload="auto"></audio>
+  <audio id="aud-swoosh-sfx" preload="auto"></audio>
   <div id="aud-scoreboard" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;background:var(--black);padding:24px;">
     <div style="font-size:clamp(28px,6vw,48px);font-weight:900;letter-spacing:4px;line-height:1;text-align:center;margin-bottom:8px;">
       <span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span>
@@ -793,7 +794,11 @@ function r2Controls(q,qi,label){
     +'<button class="p-btn-cyan" onclick="cueQuestion('+qi+')">&#x25BA; Cue question</button>'
     +'<div id="r2-controls-'+qi+'" style="display:none;">'
     +'<div class="p-section-label" style="margin-top:16px;">Timer</div>'
-    +'<button class="p-btn-outline" onclick="startR2Timer('+qi+',20)">&#x23F1; Start 20s timer</button>'
+    +'<div style="display:flex;gap:8px;">'
+    +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',20)">&#x23F1; 20s</button>'
+    +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',30)">&#x23F1; 30s</button>'
+    +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',40)">&#x23F1; 40s</button>'
+    +'</div>'
     +'<div id="p-timer"></div>'
     +'<div class="p-section-label" style="margin-top:16px;">Reveal (waiting for Bamboozler...)</div>'
     +'<div class="p-section-label" style="margin-top:12px;">Contestant votes</div>'
@@ -1008,8 +1013,42 @@ function renderFinalRevealControls(s){
     }).join('')
     +'</div>'
     +(rev<n?'<button class="p-btn-green" onclick="doFinalReveal()">Reveal '+(rev+1)+' of '+n+' &#x25BA;</button>'
-      :rev===n?'<button class="p-btn-gold" onclick="doFinalRevealCorrect()">&#x2605; Reveal correct answer</button>'
+      :rev===n?'<div class="p-section-label" style="margin-top:4px;">Give the finalist time to decide</div>'
+        +'<div style="display:flex;gap:8px;margin-bottom:8px;">'
+        +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(20)">&#x23F1; 20s</button>'
+        +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(30)">&#x23F1; 30s</button>'
+        +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(40)">&#x23F1; 40s</button>'
+        +'</div>'
+        +'<div id="p-timer"></div>'
+        +'<button class="p-btn-gold" onclick="doFinalRevealCorrect()">&#x2605; Reveal correct answer</button>'
       :'<p style="text-align:center;color:var(--gold);font-family:Arial,sans-serif;font-size:13px;">\u2713 Done</p>');
+}
+
+function startFinalTimer(secs){
+  timerTotal=secs;
+  var timerEnd=Date.now()+(secs*1000);
+  var el=document.getElementById('p-timer');
+  if(el) el.innerHTML=timerHTML(secs,secs);
+  readState(function(st){
+    if(!st)return;
+    st.timerEnd=timerEnd;
+    st.timerTotal=secs;
+    st.timerDone=false;
+    writeStateKeepVideo(st,function(ok){
+      console.log('Final timer written to Supabase:', ok, 'timerEnd:', timerEnd);
+    });
+  });
+  startCountdown(secs,function(remaining){
+    updateTimer(remaining,timerTotal);
+  },function(){
+    var el=document.getElementById('p-timer');
+    if(el) el.innerHTML='<div style="text-align:center;padding:8px 0;font-size:28px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
+    readState(function(st){
+      if(!st)return;
+      st.timerDone=true;
+      writeStateKeepVideo(st,function(){});
+    });
+  });
 }
 
 function doFinalReveal(){readState(function(s){s.reveal=(s.reveal||0)+1;writeState(s,function(){renderFinalRevealControls(s);});});}
@@ -1161,7 +1200,17 @@ function renderBamboozlerR2(s){
   if(s.timerEnd) { injectTimerIntoBam(s); }
 }
 
+function syncR2InputsToCards(){
+  Object.keys(r2Cards).forEach(function(key){
+    var card=r2Cards[key];
+    if(card.locked||!card.editable) return;
+    var input=document.getElementById('r2input-'+key);
+    if(input) card.text=input.value;
+  });
+}
+
 function renderR2Cards(){
+  syncR2InputsToCards();
   var labels=['A','B','C'];
   var taken=Object.keys(r2Cards).filter(function(k){return r2Cards[k].locked;}).map(function(k){return r2Cards[k].pos;});
   document.getElementById('r2-cards').innerHTML=Object.keys(r2Cards).map(function(key){
@@ -1224,7 +1273,7 @@ function finalizeR2Lock(key,pos){
     s.r2Placed[pos]=true;
     if(allLocked){
       var opts=['','',''];
-      Object.keys(r2Cards).forEach(function(k){ opts[r2Cards[k].pos]=r2Cards[k].text; });
+      Object.keys(r2Cards).forEach(function(k){ opts[r2Cards[k].pos]=(r2Cards[k].text||'').toUpperCase(); });
       s.phase='r2';
       s.options=opts;
       s.correctPos=r2Cards.correct.pos;
@@ -1538,7 +1587,7 @@ function renderAudience(s){
     if(titlesEl) titlesEl.style.display='none';
     hideAudTitles();
   }
-  if(!(s&&s.phase==='r2_cued')) stopTensionBed();
+  if(!(s&&(s.phase==='r2_cued'||s.phase==='final_reveal'))) stopTensionBed();
 
   // Active question phases
   if(s&&(s.phase==='r1'||s.phase==='r2'||s.phase==='r4'||s.phase==='final_reveal'
@@ -1719,10 +1768,16 @@ var lastR1BuzzedBy=null;
 var lastR1QIdx=null;
 
 
+var lastR2CorrectRevealed=false;
+var lastR2RevealQIdx=null;
 function renderAudR2(s){
+  if(lastR2RevealQIdx!==s.qIdx){ lastR2RevealQIdx=s.qIdx; lastR2CorrectRevealed=false; }
   var label=s.roundLabel||'Round 2';
   setAudHeader(label+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
   var rev=s.reveal||0;
+  var correctRevealed=rev>=4;
+  if(correctRevealed&&!lastR2CorrectRevealed){ playSwooshSfx(); }
+  lastR2CorrectRevealed=correctRevealed;
   var gridHTML=['A','B','C'].map(function(l,i){
     var shown=rev>i,isCorrect=rev>=4&&i===s.correctPos;
     var cls=isCorrect?'correct':shown?'shown':'blank';
@@ -1736,7 +1791,12 @@ function renderAudR2(s){
     rev===3?'All options \u2014 make your choice!':'\u2605 Correct answer revealed!';
 }
 
+var lastR4Revealed=false;
+var lastR4QIdx=null;
 function renderAudR4(s){
+  if(lastR4QIdx!==s.qIdx){ lastR4QIdx=s.qIdx; lastR4Revealed=false; }
+  if(s.revealed&&!lastR4Revealed){ playSwooshSfx(); }
+  lastR4Revealed=s.revealed||false;
   if(s.phase==='r4_cued'){
     setAudHeader('Round 4 — Question '+(s.qIdx+1)+' of '+s.total,'');
     var cq=s.question||'';
@@ -1789,13 +1849,18 @@ function renderAudR4(s){
   document.getElementById('aud-footer').innerHTML=s.revealed?(s.truthful?'\u2714 Delivered truthfully':'\u1F3AF Bamboozled!'):'True or Bamboozle?';
 }
 
+var lastFinalCorrectRevealed=false;
+var lastFinalQIdx=null;
 function renderAudFinal(s){
+  if(lastFinalQIdx!==s.qIdx){ lastFinalQIdx=s.qIdx; lastFinalCorrectRevealed=false; }
   setAudHeader('The Final \u2014 Question '+(s.qIdx+1),s.question);
   var rev=s.reveal||0,n=s.options.length;
   var struck=s.struckFinal||[];
   var cols=n<=3?3:n<=4?4:3;
   var labels=['A','B','C','D','E','F'];
   var correctRevealed=rev>n;
+  if(correctRevealed&&!lastFinalCorrectRevealed){ playSwooshSfx(); }
+  lastFinalCorrectRevealed=correctRevealed;
   var gridHTML=s.options.map(function(opt,i){
     var shown=rev>i;
     var isCorrect=correctRevealed&&i===s.correctPos;
@@ -1807,9 +1872,17 @@ function renderAudFinal(s){
       +'<div class="opt-text" style="font-size:clamp(12px,2vw,20px);">'+(shown?esc(opt):'')+'</div>'
       +'</div>';
   }).join('');
+  var timerHTML2=(s.timerEnd&&!correctRevealed)?'<div id="aud-remote-timer" style="grid-column:1/-1;margin-top:8px;text-align:center;">'+buildTimerHTML(s)+'</div>':'';
   document.getElementById('aud-opts').innerHTML=ltHeader('The Final',s.question)
-    +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+'</div>';
+    +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+timerHTML2+'</div>';
   document.getElementById('aud-footer').innerHTML=rev===0?'<span class="pulsing">The Bamboozles are coming\u2026</span>':rev<=n?rev+' of '+n+' revealed':'\u2605 Correct answer revealed!';
+  if(s.timerEnd&&!correctRevealed){
+    if(!s.timerDone&&Date.now()<s.timerEnd) startTensionBed();
+    else stopTensionBed();
+    tickRemoteTimer('aud-remote-timer',s);
+  } else {
+    stopTensionBed();
+  }
 }
 
 // ── Contestant ─────────────────────────────────────────────
@@ -2612,6 +2685,20 @@ function playLockInSfx(){
   } else {
     a.load();
     a.play().catch(function(err){ console.log('Lock-in SFX play() failed:',err); });
+  }
+}
+
+// One-shot "swoosh" sound effect, played on every correct-answer reveal
+// across R2/R3, R4, and the Final round.
+function playSwooshSfx(){
+  var a=document.getElementById('aud-swoosh-sfx');
+  if(!a) return;
+  if(!a.getAttribute('src')){
+    a.setAttribute('src','Bamboozle_SWOOSH.mp3');
+    a.play().catch(function(err){ console.log('Swoosh SFX play() failed:',err); });
+  } else {
+    a.load();
+    a.play().catch(function(err){ console.log('Swoosh SFX play() failed:',err); });
   }
 }
 
