@@ -373,7 +373,7 @@ function sbH(){ return {'Content-Type':'application/json','apikey':SB_KEY,'Autho
 function stKey(){ return 'bblive_'+sessionCode; }
 
 function readState(cb){
-  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(stKey())+'&select=value&limit=1&_ts='+Date.now(),{headers:sbH(),cache:'no-store'})
+  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(stKey())+'&select=value&limit=1',{headers:Object.assign({},sbH(),{'Cache-Control':'no-cache','Pragma':'no-cache'}),cache:'no-store'})
     .then(function(r){return r.json();})
     .then(function(d){ cb(d&&d.length?JSON.parse(d[0].value):null); })
     .catch(function(){ cb(null); });
@@ -405,7 +405,7 @@ function writeStateKeepVideo(newState,cb){
 // so each viewer's handshake lives in its own row instead of sharing (and
 // risking collisions with) the single game-state row above.
 function readKey(key,cb){
-  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(key)+'&select=value&limit=1&_ts='+Date.now(),{headers:sbH(),cache:'no-store'})
+  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(key)+'&select=value&limit=1',{headers:Object.assign({},sbH(),{'Cache-Control':'no-cache','Pragma':'no-cache'}),cache:'no-store'})
     .then(function(r){return r.json();})
     .then(function(d){ cb(d&&d.length?JSON.parse(d[0].value):null); })
     .catch(function(){ cb(null); });
