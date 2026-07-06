@@ -1175,16 +1175,19 @@ function finalizeR2Lock(key,pos){
   card.locked=true;
   card.pos=pos;
   renderR2Cards();
+  var allLocked=Object.keys(r2Cards).every(function(k){return r2Cards[k].locked;});
+  // Both the per-position lock flag AND (if this was the last answer) the
+  // phase finalization must happen in a SINGLE read-modify-write. Doing
+  // them as two separate concurrent readState/writeState cycles (as this
+  // used to) is a race: whichever write lands last wins, and if the lock-
+  // flag write (still carrying the old phase) lands after the finalize
+  // write, it silently reverts phase back to 'r2_cued' and undoes the
+  // whole "all locked" transition.
   readState(function(s){
     if(!s) return;
     s.r2Placed=s.r2Placed||[false,false,false];
     s.r2Placed[pos]=true;
-    writeStateKeepVideo(s,function(){});
-  });
-  var allLocked=Object.keys(r2Cards).every(function(k){return r2Cards[k].locked;});
-  if(allLocked){
-    readState(function(s){
-      if(!s) return;
+    if(allLocked){
       var opts=['','',''];
       Object.keys(r2Cards).forEach(function(k){ opts[r2Cards[k].pos]=r2Cards[k].text; });
       s.phase='r2';
@@ -1192,16 +1195,18 @@ function finalizeR2Lock(key,pos){
       s.correctPos=r2Cards.correct.pos;
       s.reveal=0;
       s.justLocked=Date.now();
-      writeStateKeepVideo(s,function(){
+    }
+    writeStateKeepVideo(s,function(){
+      if(allLocked){
         document.getElementById('b-body').innerHTML=
           '<div style="text-align:center;padding:40px 20px;">'
           +'<div style="font-size:40px;margin-bottom:16px;">&#x2713;</div>'
           +'<p style="color:var(--gold);font-family:Arial,sans-serif;font-size:16px;">All three answers locked!</p>'
           +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Waiting for the Producer to reveal them.</p>'
           +'</div>';
-      });
+      }
     });
-  }
+  });
 }
 
 
