@@ -256,6 +256,7 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
   <div class="p-header">
     <div class="logo-sm"><span style="color:#B44FEE">BAMB</span><span style="color:var(--gold)">O</span><span style="color:#B44FEE">OZLE</span></div>
     <div style="display:flex;align-items:center;gap:10px;">
+      <button onclick="sendToTitles()" style="padding:6px 12px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;">&#x1F3AC; Titles</button>
       <button onclick="sendToHolding()" style="padding:6px 12px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;">&#x23F8; Holding</button>
       <div class="p-badge" id="p-badge"></div>
     </div>
@@ -301,6 +302,10 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
     </div>
     <div style="margin-top:24px;width:80%;max-width:500px;height:4px;background:linear-gradient(90deg,transparent,var(--magenta),var(--cyan),transparent);border-radius:2px;"></div>
     <p style="margin-top:20px;font-family:Arial,sans-serif;font-size:clamp(13px,2vw,18px);letter-spacing:4px;color:var(--muted);text-transform:uppercase;">Do you have an answer for everything?</p>
+  </div>
+  <div id="aud-titles" style="display:none;flex:1;position:relative;background:#000;">
+    <video id="aud-titles-video" style="width:100%;height:100%;object-fit:contain;display:block;" playsinline muted></video>
+    <button id="aud-titles-unmute-btn" onclick="unmuteTitlesVideo()" style="display:none;position:absolute;top:16px;right:16px;z-index:5;padding:10px 18px;border-radius:24px;border:none;background:rgba(0,0,0,0.7);color:#fff;font-family:Arial,sans-serif;font-size:13px;cursor:pointer;">&#x1F507; Tap for sound</button>
   </div>
   <div class="aud-main" id="aud-main">
     <div id="aud-video-section" class="aud-video-section" style="display:none;">
@@ -1445,6 +1450,20 @@ function renderAudience(s){
   var main=document.getElementById('aud-main');
   var done=document.getElementById('aud-done');
 
+  // Title sequence video
+  var titlesEl=document.getElementById('aud-titles');
+  if(s&&s.phase==='titles'){
+    wait.style.display='none'; main.style.display='none'; done.style.display='none';
+    var holdingElT=document.getElementById('aud-holding');
+    if(holdingElT) holdingElT.style.display='none';
+    if(titlesEl) titlesEl.style.display='flex';
+    showAudTitles();
+    return;
+  } else {
+    if(titlesEl) titlesEl.style.display='none';
+    hideAudTitles();
+  }
+
   // Active question phases
   if(s&&(s.phase==='r1'||s.phase==='r2'||s.phase==='r4'||s.phase==='final_reveal'
      ||s.phase==='r2_cued'||s.phase==='r4_cued')){
@@ -1891,16 +1910,23 @@ function contestantVoteR2(i){
 // ── Producer: show votes panel ─────────────────────────────
 function sendToHolding(){
   // Write holding phase directly — don't rely on readState having existing data
-  // Preserve existing state but override phase
   readState(function(s){
     var state=s||{phase:'holding',total:0};
     state.phase='holding';
-    writeState(state,function(ok){
+    writeStateKeepVideo(state,function(ok){
       console.log('Holding written:', ok);
     });
   });
-  // Also write immediately with minimal state as fallback
-  writeStateKeepVideo({phase:'holding',total:0},function(){});
+}
+
+function sendToTitles(){
+  readState(function(s){
+    var state=s||{phase:'titles',total:0};
+    state.phase='titles';
+    writeStateKeepVideo(state,function(ok){
+      console.log('Titles written:', ok);
+    });
+  });
 }
 
 function refreshVotes(){
@@ -2384,6 +2410,39 @@ function stopAudienceVideoView(){
   var remoteVideo=document.getElementById('aud-remote-video');
   if(remoteVideo) remoteVideo.srcObject=null;
   document.getElementById('aud-video-section').style.display='none';
+}
+
+// ── Title sequence video (triggered by the Producer's "Titles" button) ──
+var audTitlesActive=false;
+function showAudTitles(){
+  if(audTitlesActive) return; // already playing — don't restart on every poll tick
+  audTitlesActive=true;
+  var v=document.getElementById('aud-titles-video');
+  if(!v) return;
+  if(!v.getAttribute('src')) v.setAttribute('src','Bam_Titles.mp4');
+  v.currentTime=0;
+  v.muted=true; // guaranteed to autoplay; offer unmute once it's actually rolling
+  var btn=document.getElementById('aud-titles-unmute-btn');
+  if(btn) btn.style.display='none';
+  v.play().then(function(){
+    if(btn) btn.style.display='block';
+  }).catch(function(err){ console.log('Titles video play() failed:',err); });
+}
+function hideAudTitles(){
+  if(!audTitlesActive) return;
+  audTitlesActive=false;
+  var v=document.getElementById('aud-titles-video');
+  if(v){ v.pause(); }
+  var btn=document.getElementById('aud-titles-unmute-btn');
+  if(btn) btn.style.display='none';
+}
+function unmuteTitlesVideo(){
+  var v=document.getElementById('aud-titles-video');
+  var btn=document.getElementById('aud-titles-unmute-btn');
+  if(!v) return;
+  v.muted=false;
+  v.play().catch(function(err){ console.log('Unmute play() failed:',err); });
+  if(btn) btn.style.display='none';
 }
 
 // Update the lower-third graphic on the audience video overlay
