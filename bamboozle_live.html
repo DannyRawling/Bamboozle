@@ -2419,11 +2419,18 @@ function showAudTitles(){
   audTitlesActive=true;
   var v=document.getElementById('aud-titles-video');
   if(!v) return;
-  if(!v.getAttribute('src')) v.setAttribute('src','Bam_Titles.mp4');
-  v.currentTime=0;
-  v.muted=true; // guaranteed to autoplay; offer unmute once it's actually rolling
   var btn=document.getElementById('aud-titles-unmute-btn');
   if(btn) btn.style.display='none';
+  v.muted=true; // guaranteed to autoplay; offer unmute once it's actually rolling
+  if(!v.getAttribute('src')){
+    v.setAttribute('src','Bam_Titles.mp4');
+  } else {
+    // Restart from the beginning by reloading rather than setting
+    // currentTime directly — setting currentTime before metadata has
+    // loaded can throw in some browsers (notably Safari/iOS), which
+    // would silently abort this whole function before play() ever ran.
+    v.load();
+  }
   v.play().then(function(){
     if(btn) btn.style.display='block';
   }).catch(function(err){ console.log('Titles video play() failed:',err); });
