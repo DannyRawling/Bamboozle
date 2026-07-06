@@ -536,6 +536,7 @@ function detectMode(v){
 
 // ── Join screen ────────────────────────────────────────────
 function doJoin(){
+  warmUpBuzzAudio();
   var codeEl=document.getElementById('codeInput');
   var roleEl=document.getElementById('roleSelect');
   var errEl=document.getElementById('join-err');
@@ -725,74 +726,67 @@ function roundLabel(mode,round){
 
 // ── Producer R1 controls ───────────────────────────────────
 function r1Controls(q,qi){
-  if(!q.r1answers||!q.r1answers.length){
-    return '<div class="p-warn">No R1 answers found for this question. Add a comma-separated answers column.</div>';
-  }
-  // Push to audience immediately
+  // Push to audience/contestants immediately (matches prior R1 behavior —
+  // navigating to an R1 question puts it live right away, no separate cue step)
   pushR1(qi);
-  // Start polling for claim progress
-  startR1ProducerPoll(qi, q.r1answers.length);
-  return '<div class="p-section-label">Round 1 — Q'+(qi+1)+' — Fastest Finger</div>'
-    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Contestants race to claim an answer each. Round auto-completes once all '+q.r1answers.length+' are claimed.</p>'
-    +'<div class="p-section-label" style="margin-top:4px;">Claims so far</div>'
-    +'<div id="p-r1-claims" style="margin-bottom:14px;"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">No claims yet</p></div>'
-    +'<button class="p-btn-gold" id="p-r1-reveal-btn" onclick="r1Reveal('+qi+')">&#x2605; End round &amp; reveal claims now</button>'
+  startR1ProducerPoll(qi);
+  return '<div class="p-section-label">Round 1 — Q'+(qi+1)+' — Buzzer</div>'
+    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Contestants buzz in to answer. First buzz locks everyone else out until you mark it correct or wrong.</p>'
+    +'<div id="p-r1-status" style="margin-bottom:14px;"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">Waiting for a buzz…</p></div>'
     +'<button class="p-btn-next" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
 }
 
 var r1ProducerPollTimer=null;
-function startR1ProducerPoll(qi,totalAnswers){
+function startR1ProducerPoll(qi){
   if(r1ProducerPollTimer) clearInterval(r1ProducerPollTimer);
-  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
   r1ProducerPollTimer=setInterval(function(){
     readState(function(s){
       if(!s||s.qIdx!==qi||s.phase!=='r1')return;
-      var claims=s.claims||{};
-      var names=Object.keys(claims);
-      var el=document.getElementById('p-r1-claims');
-      if(el){
-        if(!names.length){
-          el.innerHTML='<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">No claims yet</p>';
-        } else {
-          el.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px;">'
-            +names.map(function(idx){
-              return '<div style="background:var(--dark);border:1px solid var(--gold);border-radius:6px;padding:6px 10px;font-family:Arial,sans-serif;font-size:12px;">'
-                +'<span style="color:var(--gold);font-weight:900;">'+labels[idx]+'</span> '
-                +'<span style="color:var(--white);">'+esc(claims[idx])+'</span>'
-                +'</div>';
-            }).join('')
-            +'</div><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:11px;margin-top:8px;">'+names.length+' of '+totalAnswers+' claimed</p>';
-        }
+      var el=document.getElementById('p-r1-status');
+      if(!el)return;
+      if(s.resolved){
+        el.innerHTML='<div style="text-align:center;padding:14px;background:#001800;border:1px solid var(--gold);border-radius:10px;"><div style="font-size:16px;font-weight:900;color:var(--gold);">\u2713 '+esc(s.buzzedBy||'')+' got it right!</div></div>';
+        return;
       }
-      if(s.revealed){
-        clearInterval(r1ProducerPollTimer); r1ProducerPollTimer=null;
-        var btn=document.getElementById('p-r1-reveal-btn');
-        if(btn){ btn.textContent='\u2713 Round complete'; btn.disabled=true; }
+      if(s.buzzedBy){
+        el.innerHTML='<div style="text-align:center;padding:14px;background:var(--dark);border:2px solid var(--gold);border-radius:10px;">'
+          +'<div style="font-size:18px;font-weight:900;color:var(--gold);">\uD83D\uDD14 '+esc(s.buzzedBy)+'</div>'
+          +'<div style="font-family:Arial,sans-serif;font-size:11px;color:var(--muted);margin-top:4px;">is answering\u2026</div>'
+          +'</div>'
+          +'<div style="display:flex;gap:8px;margin-top:12px;">'
+          +'<button class="p-btn-gold" style="flex:1;margin-top:0;" onclick="resolveR1(true)">&#x2713; Correct</button>'
+          +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="resolveR1(false)">&#x2717; Wrong</button>'
+          +'</div>';
+      } else {
+        var lockedOutNames=s.lockedOut||[];
+        el.innerHTML='<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">Waiting for a buzz\u2026</p>'
+          +(lockedOutNames.length?'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:11px;margin-top:6px;">Already tried: '+lockedOutNames.map(function(n){return esc(n);}).join(', ')+'</p>':'');
       }
     });
   },1000);
 }
 
-function r1Reveal(qi){
+function resolveR1(correct){
   readState(function(s){
-    if(!s) s={};
-    s.phase='r1'; s.qIdx=qi; s.question=questions[qi].q;
-    s.r1answers=questions[qi].r1answers; s.r1correct=questions[qi].r1correct;
-    s.claims=s.claims||{};
-    s.revealed=true;
-    s.total=questions.length;
-    writeState(s,function(){});
+    if(!s||s.phase!=='r1')return;
+    if(correct){
+      s.resolved=true;
+    } else {
+      s.lockedOut=(s.lockedOut||[]).concat([s.buzzedBy]);
+      s.buzzedBy=null;
+      s.buzzedAt=null;
+    }
+    writeStateKeepVideo(s,function(){});
   });
 }
 
 function pushR1(qi){
   var q=questions[qi];
-  // claims: {answerIndex: contestantName} - first to claim wins that answer
-  var state={phase:'r1',qIdx:qi,question:q.q,r1answers:q.r1answers,r1correct:q.r1correct,claims:{},revealed:false,total:questions.length};
+  var state={phase:'r1',qIdx:qi,question:q.q,correct:q.correct,buzzedBy:null,buzzedAt:null,lockedOut:[],resolved:false,total:questions.length};
   writeStateKeepVideo(state,function(){});
 }
 
-// ── Producer R2/R3 controls ────────────────────────────────
+// ── Producer R2/R3 controls// ── Producer R2/R3 controls ────────────────────────────────
 function r2Controls(q,qi,label){
   return '<div class="p-section-label">'+label+' controls</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to the Bamboozler. Once they submit their answers you can start the reveal.</p>'
@@ -1064,6 +1058,22 @@ function tickRemoteTimer(elId, s){
   },500);
 }
 
+function renderBamboozlerR1(s){
+  document.getElementById('b-body').innerHTML=
+    '<div class="q-card">'
+    +'<div class="qlabel">Round 1 &mdash; Q'+(s.qIdx+1)+' of '+s.total+'</div>'
+    +'<div class="qtext">'+esc(s.question)+'</div>'
+    +'<div class="correct"><span>Correct: </span>'+esc(s.correct)+'</div>'
+    +'</div>'
+    +(s.resolved
+      ?'<div style="text-align:center;padding:24px;background:#001800;border:1px solid var(--gold);border-radius:10px;"><div style="font-size:20px;font-weight:900;color:var(--gold);">&#x1F389; '+esc(s.buzzedBy||'')+' got it right!</div></div>'
+      :s.buzzedBy
+        ?'<div style="text-align:center;padding:24px;background:var(--dark);border:2px solid var(--gold);border-radius:10px;"><div style="font-size:22px;font-weight:900;color:var(--gold);">&#x1F514; '+esc(s.buzzedBy)+'</div><div style="font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:6px;">is answering &mdash; mark it on the Producer screen</div></div>'
+        :'<div style="text-align:center;padding:24px;background:var(--dark);border:1px solid var(--purple);border-radius:10px;"><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">Waiting for a buzz&hellip;</p>'
+          +((s.lockedOut&&s.lockedOut.length)?'<p style="font-family:Arial,sans-serif;font-size:11px;color:var(--muted);margin-top:8px;">Already tried: '+s.lockedOut.map(function(n){return esc(n);}).join(', ')+'</p>':'')
+          +'</div>');
+}
+
 function renderBamboozlerWaiting(){
   document.getElementById('b-body').innerHTML=
     '<div style="text-align:center;padding:60px 20px;">'
@@ -1074,7 +1084,7 @@ function renderBamboozlerWaiting(){
 
 var currentBamPhase=null;
 function renderBamboozlerForState(s){
-  if(!s||s.phase==='idle'||s.phase==='r1'){
+  if(!s||s.phase==='idle'){
     currentBamPhase=null;
     renderBamboozlerWaiting();return;
   }
@@ -1083,7 +1093,8 @@ function renderBamboozlerForState(s){
     injectTimerIntoBam(s);return;
   }
   currentBamPhase=s.phase;
-  if(s.phase==='r2_cued') renderBamboozlerR2(s);
+  if(s.phase==='r1') renderBamboozlerR1(s);
+  else if(s.phase==='r2_cued') renderBamboozlerR2(s);
   else if(s.phase==='r4_cued') renderBamboozlerR4(s);
   else if(s.phase==='final_entry') renderBamboozlerFinal(s);
   else renderBamboozlerWaiting();
@@ -1672,66 +1683,39 @@ function renderAudCued(s){
 }
 
 function renderAudR1(s){
-  if(lastR1QIdx!==s.qIdx){ lastR1QIdx=s.qIdx; lastR1Claims={}; }
+  if(lastR1QIdx!==s.qIdx){ lastR1QIdx=s.qIdx; lastR1BuzzedBy=null; }
   setAudHeader('Round 1 \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
   updateVideoLowerThird('Round 1',s.question);
-  if(!s.r1answers||!s.r1answers.length){
-    document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
-      +'<div class="opts-grid" style="grid-template-columns:1fr;"><div class="opt-cell shown" style="grid-column:1/-1;"><div class="opt-text" style="color:var(--muted);font-family:Arial,sans-serif;">No answers found.</div></div></div>';
-    return;
-  }
-  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
-  var claims=s.claims||{};
-  var revealed=s.revealed||false;
-  var cols=s.r1answers.length<=6?2:3;
 
-  if(revealed){
-    // Reveal screen — show who claimed what
-    var gridHTML=s.r1answers.map(function(ans,i){
-      var claimedBy=claims[i];
-      var isCorrect=i===s.r1correct;
-      var cls=isCorrect?'correct':claimedBy?'shown':'struck';
-      return '<div class="opt-cell '+cls+'">'
-        +'<div class="opt-letter">'+labels[i]+'</div>'
-        +'<div class="opt-text" style="font-size:clamp(12px,2vw,19px);">'+esc(ans)+'</div>'
-        +(claimedBy?'<div style="margin-top:8px;font-size:12px;color:var(--gold);font-family:Arial,sans-serif;font-weight:900;">'+esc(claimedBy)+'</div>':'')
-        +'</div>';
-    }).join('');
-    document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
-      +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+'</div>';
-    document.getElementById('aud-footer').textContent='Fastest finger results';
-  } else {
-    // Live race — a claimed answer gets a LOCKED badge the instant it's
-    // claimed, then goes blank once the badge has had a moment to register.
-    var unclaimedCount=s.r1answers.filter(function(_,i){return !claims[i];}).length;
-    var hasNewClaim=false;
-    var gridHTML=s.r1answers.map(function(ans,i){
-      var claimedBy=claims[i];
-      if(claimedBy){
-        var isNew=lastR1Claims[i]===undefined;
-        if(isNew) hasNewClaim=true;
-        return '<div class="opt-cell '+(isNew?'shown':'blank')+'" style="position:relative;">'
-          +'<div class="opt-letter">'+labels[i]+'</div>'
-          +(isNew?'<div class="lock-badge">Locked In</div>':'')
-          +'</div>';
-      }
-      return '<div class="opt-cell shown">'
-        +'<div class="opt-letter">'+labels[i]+'</div>'
-        +'<div class="opt-text" style="font-size:clamp(12px,2vw,19px);">'+esc(ans)+'</div>'
-        +'</div>';
-    }).join('');
-    document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
-      +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+'</div>';
-    document.getElementById('aud-footer').innerHTML='<span class="pulsing">'+unclaimedCount+' answer'+(unclaimedCount!==1?'s':'')+' remaining \u2014 fastest finger first!</span>';
-    lastR1Claims=claims;
-    if(hasNewClaim){
-      // After the lock badge has had a moment to show, re-render without it
-    // so the cell settles into its plain blank state.
-      setTimeout(function(){ readState(function(fresh){ if(fresh&&fresh.phase==='r1'&&!fresh.revealed) renderAudR1(fresh); }); },1400);
-    }
+  if(s.buzzedBy&&lastR1BuzzedBy!==s.buzzedBy){
+    playBuzzTone(s.buzzedBy);
   }
+  lastR1BuzzedBy=s.buzzedBy||null;
+
+  var bodyHTML;
+  if(s.resolved){
+    bodyHTML='<div class="opt-cell correct" style="grid-column:1/-1;flex-direction:column;padding:44px;">'
+      +'<div style="font-size:clamp(24px,4.5vw,40px);font-weight:900;color:var(--gold);margin-bottom:10px;">\uD83C\uDF89 '+esc(s.buzzedBy||'')+'</div>'
+      +'<div style="font-family:Arial,sans-serif;font-size:16px;color:var(--white);">Got it right!</div>'
+      +'</div>';
+  } else if(s.buzzedBy){
+    bodyHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:44px;position:relative;">'
+      +'<div class="lock-badge" style="position:static;transform:none;margin-bottom:18px;">Buzzed In</div>'
+      +'<div style="font-size:clamp(26px,5.5vw,48px);font-weight:900;color:var(--gold);">'+esc(s.buzzedBy)+'</div>'
+      +'<div style="font-family:Arial,sans-serif;font-size:14px;color:var(--muted);margin-top:10px;">is answering\u2026</div>'
+      +'</div>';
+  } else {
+    bodyHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:44px;">'
+      +'<div class="pulsing" style="font-size:clamp(18px,3.2vw,30px);color:var(--white);font-family:Arial,sans-serif;letter-spacing:2px;">Waiting for a buzz\u2026</div>'
+      +((s.lockedOut&&s.lockedOut.length)?'<div style="font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:14px;">Already tried: '+s.lockedOut.map(function(n){return esc(n);}).join(', ')+'</div>':'')
+      +'</div>';
+  }
+
+  document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
+    +'<div class="opts-grid" style="grid-template-columns:1fr;">'+bodyHTML+'</div>';
+  document.getElementById('aud-footer').innerHTML=s.resolved?'Round 1 result':(s.buzzedBy?'Buzzed in':'<span class="pulsing">Buzz in to answer!</span>');
 }
-var lastR1Claims={};
+var lastR1BuzzedBy=null;
 var lastR1QIdx=null;
 
 
@@ -1862,84 +1846,52 @@ function renderContestantForState(s){
 
 // Round 1 — fastest finger first: claimed answers vanish for everyone
 function renderContestantR1(s){
-  if(!s.r1answers||!s.r1answers.length){renderContestantWaiting();return;}
-  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
-  var claims=s.claims||{};
-  var myClaim=null;
-  Object.keys(claims).forEach(function(idx){ if(claims[idx]===contestantName) myClaim=parseInt(idx); });
-  var revealed=s.revealed||false;
+  var iBuzzed=s.buzzedBy===contestantName;
+  var someoneElseBuzzed=!!s.buzzedBy&&!iBuzzed;
+  var iAmLockedOut=(s.lockedOut||[]).indexOf(contestantName)!==-1;
 
-  if(revealed){
+  if(s.resolved){
     document.getElementById('c-body').innerHTML=
       '<div class="q-card" style="border-color:var(--gold);">'
-      +'<div class="qlabel" style="color:var(--gold);">Round 1 — Results</div>'
+      +'<div class="qlabel" style="color:var(--gold);">Round 1 \u2014 Result</div>'
       +'<div class="qtext">'+esc(s.question)+'</div>'
       +'</div>'
-      +(myClaim!==null
-        ?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:14px;font-family:Arial,sans-serif;font-size:14px;color:var(--gold);text-align:center;">You claimed: <strong>'+labels[myClaim]+' — '+esc(s.r1answers[myClaim])+'</strong></div>'
-        :'<div style="background:var(--dark);border:1px solid var(--purple);border-radius:8px;padding:14px;font-family:Arial,sans-serif;font-size:14px;color:var(--muted);text-align:center;">You didn\'t claim an answer in time!</div>');
+      +(iBuzzed
+        ?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:14px;text-align:center;color:var(--gold);font-family:Arial,sans-serif;font-size:15px;">You got it right! \uD83C\uDF89</div>'
+        :'<div style="background:var(--dark);border:1px solid var(--purple);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">'+esc(s.buzzedBy||'Someone')+' got it right.</div>');
     return;
   }
 
-  var grid=s.r1answers.map(function(ans,i){
-    var claimedBy=claims[i];
-    if(claimedBy){
-      // Already claimed by someone - greyed out, not clickable
-      var isMine=claimedBy===contestantName;
-      return '<div style="display:flex;align-items:center;gap:10px;padding:14px;background:'+(isMine?'#001800':'#0A0010')+';border:2px solid '+(isMine?'var(--gold)':'#2A0050')+';border-radius:10px;opacity:'+(isMine?'1':'0.4')+';margin-bottom:8px;">'
-        +'<div style="width:32px;height:32px;border-radius:50%;background:'+(isMine?'var(--gold)':'#2A0050')+';display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:'+(isMine?'var(--black)':'var(--muted)')+';flex-shrink:0;">'+labels[i]+'</div>'
-        +'<div style="font-size:15px;font-family:Arial,sans-serif;color:'+(isMine?'var(--gold)':'var(--muted)')+';">'+esc(ans)+(isMine?' \u2014 claimed by you!':' \u2014 taken')+'</div>'
-        +'</div>';
-    }
-    // Available - clickable
-    return '<div onclick="contestantClaimR1('+i+')" style="display:flex;align-items:center;gap:10px;padding:14px;background:var(--dark);border:2px solid var(--purple);border-radius:10px;cursor:pointer;transition:all 0.15s;margin-bottom:8px;">'
-      +'<div style="width:32px;height:32px;border-radius:50%;background:var(--cyan);display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;color:var(--black);flex-shrink:0;">'+labels[i]+'</div>'
-      +'<div style="font-size:15px;font-family:Arial,sans-serif;color:var(--white);">'+esc(ans)+'</div>'
-      +'</div>';
-  }).join('');
+  var actionHTML;
+  if(iBuzzed){
+    actionHTML='<div style="background:#001800;border:2px solid var(--gold);border-radius:14px;padding:28px 20px;text-align:center;"><div style="font-size:24px;font-weight:900;color:var(--gold);letter-spacing:1px;">YOU\'RE IN!</div><div style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-top:8px;">Answer out loud now</div></div>';
+  } else if(someoneElseBuzzed){
+    actionHTML='<div style="background:var(--dark);border:2px solid #2A0050;border-radius:14px;padding:28px 20px;text-align:center;opacity:0.65;"><div style="font-size:16px;font-weight:900;color:var(--muted);letter-spacing:1px;">LOCKED OUT</div><div style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-top:8px;">'+esc(s.buzzedBy)+' is answering</div></div>';
+  } else if(iAmLockedOut){
+    actionHTML='<div style="background:var(--dark);border:2px solid #2A0050;border-radius:14px;padding:28px 20px;text-align:center;opacity:0.5;"><div style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);">You\'ve had your go \u2014 waiting for someone else\u2026</div></div>';
+  } else {
+    actionHTML='<button onclick="contestantBuzz()" style="width:100%;padding:44px 20px;border-radius:18px;border:none;background:linear-gradient(180deg,var(--magenta),#8A0060);color:#fff;font-family:\'Arial Black\',Arial,sans-serif;font-size:30px;font-weight:900;letter-spacing:2px;cursor:pointer;box-shadow:0 6px 0 #5A0040;">BUZZ!</button>';
+  }
 
   document.getElementById('c-body').innerHTML=
     '<div class="q-card" style="border-color:var(--magenta);">'
-    +'<div class="qlabel">Round 1 — Fastest Finger</div>'
+    +'<div class="qlabel">Round 1 \u2014 Buzzer</div>'
     +'<div class="qtext">'+esc(s.question)+'</div>'
     +'</div>'
-    +(myClaim!==null
-      ?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:10px 14px;font-family:Arial,sans-serif;font-size:13px;color:var(--gold);margin-bottom:14px;text-align:center;">You claimed: <strong>'+labels[myClaim]+' — '+esc(s.r1answers[myClaim])+'</strong></div>'
-      :'<div class="section-label">Tap an answer before someone else does!</div>')
-    +(myClaim===null?grid:'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;text-align:center;">Waiting for other players\u2026</p>');
+    +actionHTML;
 }
 
-function contestantClaimR1(i){
+function contestantBuzz(){
   readState(function(s){
-    if(!s||s.phase!=='r1'||s.revealed)return;
-    var claims=s.claims||{};
-    // Already claimed by someone (race condition check)
-    if(claims[i]){ renderContestantR1(s); return; }
-    // Check this contestant hasn't already claimed a different answer
-    var alreadyClaimed=Object.keys(claims).some(function(idx){return claims[idx]===contestantName;});
-    if(alreadyClaimed) return;
-    claims[i]=contestantName;
-    s.claims=claims;
-    writeState(s,function(ok){
-      if(ok){
-        renderContestantR1(s);
-        lastContestantHash=JSON.stringify(s);
-        // Check if all 6 answers now claimed - signal producer via state
-        checkR1AutoComplete(s);
-      }
+    if(!s||s.phase!=='r1'||s.resolved)return;
+    if(s.buzzedBy)return; // too late — someone beat you to it
+    if((s.lockedOut||[]).indexOf(contestantName)!==-1)return;
+    s.buzzedBy=contestantName;
+    s.buzzedAt=Date.now();
+    writeStateKeepVideo(s,function(ok){
+      if(ok){ renderContestantR1(s); lastContestantHash=JSON.stringify(s); }
     });
   });
-}
-
-function checkR1AutoComplete(s){
-  if(!s.r1answers)return;
-  var claims=s.claims||{};
-  var claimedCount=Object.keys(claims).length;
-  if(claimedCount>=s.r1answers.length&&!s.revealed){
-    // All answers claimed - auto trigger reveal
-    s.revealed=true;
-    writeState(s,function(){});
-  }
 }
 
 // Round 2/3 — A B C selection
@@ -2661,6 +2613,43 @@ function playLockInSfx(){
     a.load();
     a.play().catch(function(err){ console.log('Lock-in SFX play() failed:',err); });
   }
+}
+
+// ── Buzzer tone, unique per contestant name ────────────────
+// Synthesized on the fly (no audio files needed) — the name is hashed to
+// a deterministic pitch + waveform, so the same person always makes the
+// same sound, and different names sound distinct from each other.
+function warmUpBuzzAudio(){
+  try{
+    if(!window.__buzzAudioCtx){
+      window.__buzzAudioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    }
+    if(window.__buzzAudioCtx.state==='suspended') window.__buzzAudioCtx.resume();
+  }catch(e){ /* Web Audio not available — buzz tones just won't play */ }
+}
+function playBuzzTone(name){
+  try{
+    warmUpBuzzAudio();
+    var ctx=window.__buzzAudioCtx;
+    if(!ctx) return;
+    var hash=0;
+    for(var i=0;i<(name||'').length;i++){ hash=(hash*31+name.charCodeAt(i))|0; }
+    hash=Math.abs(hash);
+    var freq=180+(hash%12)*35; // deterministic pitch, roughly 180-565Hz
+    var wave=(hash%2===0)?'sawtooth':'square';
+    var osc=ctx.createOscillator();
+    var gain=ctx.createGain();
+    osc.type=wave;
+    osc.frequency.value=freq;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    var now=ctx.currentTime;
+    gain.gain.setValueAtTime(0.0001,now);
+    gain.gain.exponentialRampToValueAtTime(0.3,now+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,now+0.5);
+    osc.start(now);
+    osc.stop(now+0.55);
+  }catch(e){ console.log('Buzz tone failed:',e); }
 }
 
 // Update the lower-third graphic on the audience video overlay
