@@ -680,6 +680,30 @@ function renderProducer(qi){
   else ctrlHTML=r2Controls(q,qi,label);
 
   body.innerHTML=navHTML+qHTML+ctrlHTML;
+
+  // Self-heal: if this render happened for any reason other than a fresh
+  // "Cue question" click (page reload, mobile tab getting backgrounded
+  // and restored, etc.), pick up from wherever the shared state actually
+  // is instead of stranding the Producer on the un-cued view while the
+  // Bamboozler is already mid-arrangement or fully locked in.
+  if(q.mode!=='r1'&&q.mode!=='r4'&&q.mode!=='final'){
+    catchUpR2Controls(qi);
+  }
+}
+
+function catchUpR2Controls(qi){
+  readState(function(s){
+    if(!s||s.qIdx!==qi) return;
+    if(s.phase==='r2_cued'||s.phase==='r2'){
+      var el=document.getElementById('r2-controls-'+qi);
+      if(el) el.style.display='block';
+      if(s.phase==='r2'&&s.options){
+        renderRevealControls(s);
+      } else {
+        startRevealPoll(qi);
+      }
+    }
+  });
 }
 
 function producerNav(qi){
