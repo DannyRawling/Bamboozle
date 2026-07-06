@@ -373,7 +373,7 @@ function sbH(){ return {'Content-Type':'application/json','apikey':SB_KEY,'Autho
 function stKey(){ return 'bblive_'+sessionCode; }
 
 function readState(cb){
-  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(stKey())+'&select=value&limit=1',{headers:sbH()})
+  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(stKey())+'&select=value&limit=1&_ts='+Date.now(),{headers:sbH(),cache:'no-store'})
     .then(function(r){return r.json();})
     .then(function(d){ cb(d&&d.length?JSON.parse(d[0].value):null); })
     .catch(function(){ cb(null); });
@@ -405,7 +405,7 @@ function writeStateKeepVideo(newState,cb){
 // so each viewer's handshake lives in its own row instead of sharing (and
 // risking collisions with) the single game-state row above.
 function readKey(key,cb){
-  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(key)+'&select=value&limit=1',{headers:sbH()})
+  fetch(SB_URL+'/rest/v1/bamboozle_sessions?key=eq.'+encodeURIComponent(key)+'&select=value&limit=1&_ts='+Date.now(),{headers:sbH(),cache:'no-store'})
     .then(function(r){return r.json();})
     .then(function(d){ cb(d&&d.length?JSON.parse(d[0].value):null); })
     .catch(function(){ cb(null); });
@@ -1484,31 +1484,9 @@ function renderAudience(s){
     if(holding) holding.style.display='flex';
     return;
   }
-  // Hide holding if showing
-  var holding=document.getElementById('aud-holding');
-  if(holding) holding.style.display='none';
-
-  // Holding screen
-  if(s&&s.phase==='holding'){
-    wait.style.display='none'; main.style.display='none'; done.style.display='none';
-    var holdingEl=document.getElementById('aud-holding');
-    if(holdingEl) holdingEl.style.display='flex';
-    return;
-  }
-  // Hide holding for all other states
-  var holdingEl2=document.getElementById('aud-holding');
-  if(holdingEl2) holdingEl2.style.display='none';
-
-  // Holding screen
-  if(s&&s.phase==='holding'){
-    wait.style.display='none'; main.style.display='none'; done.style.display='none';
-    var hEl=document.getElementById('aud-holding');
-    if(hEl) hEl.style.display='flex';
-    return;
-  }
-  var hEl2=document.getElementById('aud-holding');
-  if(hEl2) hEl2.style.display='none';
-  // Idle / waiting (show waiting screen)
+  var holding2=document.getElementById('aud-holding');
+  if(holding2) holding2.style.display='none';
+// Idle / waiting (show waiting screen)
   wait.style.display='flex'; main.style.display='none'; done.style.display='none';
   wait.innerHTML='<div class="logo"><span class="p">BAMB</span><span class="g">O</span><span class="p">OZLE</span></div>'
     +'<div style="font-size:clamp(36px,10vw,64px);letter-spacing:12px;color:var(--gold);margin:16px 0;">'+sessionCode+'</div>'
