@@ -783,11 +783,11 @@ function resolveR1(correct){
 
 function pushR1(qi){
   var q=questions[qi];
-  var state={phase:'r1',qIdx:qi,question:q.q,correct:q.correct,buzzedBy:null,buzzedAt:null,lockedOut:[],resolved:false,total:questions.length};
+  var state={phase:'r1',qIdx:qi,question:q.q,correct:q.correct,r1answers:q.r1answers,r1correct:q.r1correct,buzzedBy:null,buzzedAt:null,lockedOut:[],resolved:false,total:questions.length};
   writeStateKeepVideo(state,function(){});
 }
 
-// ── Producer R2/R3 controls// ── Producer R2/R3 controls ────────────────────────────────
+// ── Producer R2/R3 controls ────────────────────────────────
 function r2Controls(q,qi,label){
   return '<div class="p-section-label">'+label+' controls</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to the Bamboozler. Once they submit their answers you can start the reveal.</p>'
@@ -1741,27 +1741,45 @@ function renderAudR1(s){
   }
   lastR1BuzzedBy=s.buzzedBy||null;
 
-  var bodyHTML;
+  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
+  var answers=s.r1answers||[];
+  var cols=answers.length<=6?2:3;
+
+  // Read-only reference display of the multiple-choice answers — Round 1
+  // no longer uses these for claiming, but the audience still needs to
+  // see what the options actually are while someone's buzzed in.
+  var answersGridHTML='';
+  if(answers.length){
+    answersGridHTML='<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);margin-bottom:14px;">'
+      +answers.map(function(ans,i){
+        var isCorrect=s.resolved&&i===s.r1correct;
+        return '<div class="opt-cell '+(isCorrect?'correct':'shown')+'"><div class="opt-letter">'+labels[i]+'</div><div class="opt-text" style="font-size:clamp(12px,2vw,18px);">'+esc(ans)+'</div></div>';
+      }).join('')
+      +'</div>';
+  }
+
+  var statusHTML;
   if(s.resolved){
-    bodyHTML='<div class="opt-cell correct" style="grid-column:1/-1;flex-direction:column;padding:44px;">'
-      +'<div style="font-size:clamp(24px,4.5vw,40px);font-weight:900;color:var(--gold);margin-bottom:10px;">\uD83C\uDF89 '+esc(s.buzzedBy||'')+'</div>'
-      +'<div style="font-family:Arial,sans-serif;font-size:16px;color:var(--white);">Got it right!</div>'
+    statusHTML='<div class="opt-cell correct" style="grid-column:1/-1;flex-direction:column;padding:28px;">'
+      +'<div style="font-size:clamp(22px,4vw,34px);font-weight:900;color:var(--gold);margin-bottom:8px;">\uD83C\uDF89 '+esc(s.buzzedBy||'')+'</div>'
+      +'<div style="font-family:Arial,sans-serif;font-size:15px;color:var(--white);">Got it right!</div>'
       +'</div>';
   } else if(s.buzzedBy){
-    bodyHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:44px;position:relative;">'
-      +'<div class="lock-badge" style="position:static;transform:none;margin-bottom:18px;">Buzzed In</div>'
-      +'<div style="font-size:clamp(26px,5.5vw,48px);font-weight:900;color:var(--gold);">'+esc(s.buzzedBy)+'</div>'
-      +'<div style="font-family:Arial,sans-serif;font-size:14px;color:var(--muted);margin-top:10px;">is answering\u2026</div>'
+    statusHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:28px;position:relative;">'
+      +'<div class="lock-badge" style="position:static;transform:none;margin-bottom:14px;">Buzzed In</div>'
+      +'<div style="font-size:clamp(22px,4.5vw,38px);font-weight:900;color:var(--gold);">'+esc(s.buzzedBy)+'</div>'
+      +'<div style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-top:8px;">is answering\u2026</div>'
       +'</div>';
   } else {
-    bodyHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:44px;">'
-      +'<div class="pulsing" style="font-size:clamp(18px,3.2vw,30px);color:var(--white);font-family:Arial,sans-serif;letter-spacing:2px;">Waiting for a buzz\u2026</div>'
-      +((s.lockedOut&&s.lockedOut.length)?'<div style="font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:14px;">Already tried: '+s.lockedOut.map(function(n){return esc(n);}).join(', ')+'</div>':'')
+    statusHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:28px;">'
+      +'<div class="pulsing" style="font-size:clamp(16px,2.8vw,24px);color:var(--white);font-family:Arial,sans-serif;letter-spacing:2px;">Waiting for a buzz\u2026</div>'
+      +((s.lockedOut&&s.lockedOut.length)?'<div style="font-family:Arial,sans-serif;font-size:11px;color:var(--muted);margin-top:10px;">Already tried: '+s.lockedOut.map(function(n){return esc(n);}).join(', ')+'</div>':'')
       +'</div>';
   }
 
   document.getElementById('aud-opts').innerHTML=ltHeader('Round 1',s.question)
-    +'<div class="opts-grid" style="grid-template-columns:1fr;">'+bodyHTML+'</div>';
+    +answersGridHTML
+    +'<div class="opts-grid" style="grid-template-columns:1fr;">'+statusHTML+'</div>';
   document.getElementById('aud-footer').innerHTML=s.resolved?'Round 1 result':(s.buzzedBy?'Buzzed in':'<span class="pulsing">Buzz in to answer!</span>');
 }
 var lastR1BuzzedBy=null;
