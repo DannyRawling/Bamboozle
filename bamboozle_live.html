@@ -211,11 +211,14 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
       </div>
       <div id="name-row" class="field" style="display:none;">
         <label>Your name</label>
-        <input type="text" name="cname" id="nameInput" placeholder="e.g. Danny" autocomplete="off">
-      </div>
-            <div id="name-row" class="field" style="display:none;">
-        <label>Your name</label>
         <input type="text" id="nameInput" placeholder="e.g. Danny" autocomplete="off" autocorrect="off">
+      </div>
+      <div id="podium-row" class="field" style="display:none;">
+        <label>Which podium?</label>
+        <select id="podiumSelect">
+          <option value="1">Podium 1</option>
+          <option value="2">Podium 2</option>
+        </select>
       </div>
       <div id="pin-row" class="field" style="display:none;">
         <label>Producer PIN</label>
@@ -389,6 +392,7 @@ var webrtcPollTimer=null;         // dedicated poll loop for signaling (separate
 // ── State ──────────────────────────────────────────────────
 var role=null, sessionCode=null;
 var isStudioRole=false;
+var myPodium=1;
 var questions=[], allRows=[], headers=[];
 var pollTimer=null, lastHash='';
 var countdownTimer=null, countdownSecs=0;
@@ -579,9 +583,11 @@ function doJoin(){
     return;
   }
   if(r==='bamboozler'){
+    var podiumEl=document.getElementById('podiumSelect');
+    myPodium=podiumEl?parseInt(podiumEl.value,10):1;
     showScreen('bamboozler');
     var badge=document.getElementById('b-badge');
-    if(badge) badge.textContent='Session: '+sessionCode;
+    if(badge) badge.textContent='Session: '+sessionCode+' \u2014 Podium '+myPodium;
     startBamboozlerPoll();
     return;
   }
@@ -596,6 +602,7 @@ function doJoin(){
 function onRoleChange(v){
   document.getElementById('pin-row').style.display=(v==='producer')?'block':'none';
   document.getElementById('name-row').style.display=(v==='contestant')?'block':'none';
+  document.getElementById('podium-row').style.display=(v==='bamboozler')?'block':'none';
 }
 
 function handleJoinForm(e){
@@ -821,9 +828,16 @@ function pushR1(qi){
 
 // ── Producer R2/R3 controls ────────────────────────────────
 function r2Controls(q,qi,label){
+  var cueHTML=q.mode==='r3'
+    ?'<div class="p-section-label">Which podium plays this?</div>'
+      +'<div style="display:flex;gap:8px;margin-bottom:12px;">'
+      +'<button class="p-btn-cyan" style="flex:1;" onclick="cueQuestion('+qi+',1)">Podium 1</button>'
+      +'<button class="p-btn-cyan" style="flex:1;" onclick="cueQuestion('+qi+',2)">Podium 2</button>'
+      +'</div>'
+    :'<button class="p-btn-cyan" onclick="cueQuestion('+qi+')">&#x25BA; Cue question</button>';
   return '<div class="p-section-label">'+label+' controls</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to the Bamboozler. Once they submit their answers you can start the reveal.</p>'
-    +'<button class="p-btn-cyan" onclick="cueQuestion('+qi+')">&#x25BA; Cue question</button>'
+    +cueHTML
     +'<div id="r2-controls-'+qi+'" style="display:none;">'
     +'<div class="p-section-label" style="margin-top:16px;">Timer</div>'
     +'<div style="display:flex;gap:8px;">'
@@ -832,6 +846,7 @@ function r2Controls(q,qi,label){
     +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',40)">&#x23F1; 40s</button>'
     +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',60)">&#x23F1; 60s</button>'
     +'</div>'
+    +'<button class="p-btn-outline" id="timer-pause-btn" style="width:100%;margin-top:8px;" onclick="toggleTimerPause()">&#x23F8; Pause</button>'
     +'<div id="p-timer"></div>'
     +'<div class="p-section-label" style="margin-top:16px;">Reveal (waiting for Bamboozler...)</div>'
     +'<div class="p-section-label" style="margin-top:12px;">Contestant votes</div>'
@@ -845,10 +860,10 @@ function waitingHTML(){
   return '<div style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);padding:12px;background:var(--dark);border-radius:8px;">Waiting for Bamboozler to submit answers...</div>';
 }
 
-function cueQuestion(qi){
+function cueQuestion(qi,podium){
   var q=questions[qi];
   var label=roundLabel(q.mode,q.round);
-  var state={phase:'r2_cued',qIdx:qi,question:q.q,correct:q.correct,mode:q.mode,roundLabel:label,total:questions.length,r2Placed:[false,false,false]};
+  var state={phase:'r2_cued',qIdx:qi,question:q.q,correct:q.correct,mode:q.mode,roundLabel:label,total:questions.length,r2Placed:[false,false,false],activePodium:podium||null};
   writeStateKeepVideo(state,function(){
     document.getElementById('r2-controls-'+qi).style.display='block';
     // Poll for bamboozler submission
@@ -875,6 +890,7 @@ function startRevealPoll(qi){
 
 function startR2Timer(qi,secs){
   timerTotal=secs;
+  timerIsPaused=false;
   var timerEnd=Date.now()+(secs*1000);
   // Show on producer immediately
   var el=document.getElementById('p-timer');
@@ -885,6 +901,8 @@ function startR2Timer(qi,secs){
     st.timerEnd=timerEnd;
     st.timerTotal=secs;
     st.timerDone=false;
+    st.timerPaused=false;
+    st.timerPausedRemaining=null;
     writeState(st,function(ok){
       console.log('Timer written to Supabase:', ok, 'timerEnd:', timerEnd);
     });
@@ -900,6 +918,57 @@ function startR2Timer(qi,secs){
       if(!st)return;
       st.timerDone=true;
       writeState(st,function(){});
+    });
+  });
+}
+
+var timerIsPaused=false;
+function toggleTimerPause(){
+  var btn=document.getElementById('timer-pause-btn');
+  if(!timerIsPaused){
+    pauseTimer();
+    timerIsPaused=true;
+    if(btn) btn.innerHTML='&#x25B6; Resume';
+  } else {
+    resumeTimer();
+    timerIsPaused=false;
+    if(btn) btn.innerHTML='&#x23F8; Pause';
+  }
+}
+
+function pauseTimer(){
+  stopCountdown();
+  readState(function(s){
+    if(!s||!s.timerEnd||s.timerPaused) return;
+    s.timerPausedRemaining=Math.max(0,s.timerEnd-Date.now());
+    s.timerPaused=true;
+    writeStateKeepVideo(s,function(){
+      var el=document.getElementById('p-timer');
+      if(el) el.innerHTML=buildTimerHTML(s);
+    });
+  });
+}
+
+function resumeTimer(){
+  readState(function(s){
+    if(!s||!s.timerPaused) return;
+    var remainingMs=s.timerPausedRemaining||0;
+    var remainingSecs=Math.max(1,Math.round(remainingMs/1000));
+    s.timerEnd=Date.now()+remainingMs;
+    s.timerPaused=false;
+    writeStateKeepVideo(s,function(){
+      timerTotal=s.timerTotal||remainingSecs;
+      startCountdown(remainingSecs,function(remaining){
+        updateTimer(remaining,timerTotal);
+      },function(){
+        var el=document.getElementById('p-timer');
+        if(el) el.innerHTML='<div style="text-align:center;font-size:28px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;margin-bottom:12px;">TIMES UP</div>';
+        readState(function(st){
+          if(!st)return;
+          st.timerDone=true;
+          writeStateKeepVideo(st,function(){});
+        });
+      });
     });
   });
 }
@@ -935,17 +1004,20 @@ function doRevealCorrect(){
 // ── Producer R4 controls ───────────────────────────────────
 function r4Controls(q,qi){
   return '<div class="p-section-label">Round 4 — Q'+(qi+1)+'</div>'
-    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to the Bamboozler. They will decide to deliver it truthfully or swap the last word.</p>'
-    +'<button class="p-btn-cyan" onclick="cueR4('+qi+')" id="r4-cue-btn">&#x25BA; Cue question</button>'
+    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to a podium. They will decide to deliver it truthfully or swap the last word.</p>'
+    +'<div id="r4-cue-btn" style="display:flex;gap:8px;">'
+    +'<button class="p-btn-cyan" style="flex:1;" onclick="cueR4('+qi+',1)">Podium 1</button>'
+    +'<button class="p-btn-cyan" style="flex:1;" onclick="cueR4('+qi+',2)">Podium 2</button>'
+    +'</div>'
     +'<div id="r4-pending" style="display:none;margin-top:12px;padding:12px;background:var(--dark);border-radius:8px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted);">&#x23F3; Waiting for Bamboozler to decide...</div>'
     +'<div id="r4-reveal" style="display:none;margin-top:12px;">'
     +'<button class="p-btn-gold" onclick="doR4Reveal()">&#x2605; Reveal answer</button>'
     +'</div>';
 }
 
-function cueR4(qi){
+function cueR4(qi,podium){
   var q=questions[qi];
-  var state={phase:'r4_cued',qIdx:qi,question:q.q,correct:q.correct,total:questions.length};
+  var state={phase:'r4_cued',qIdx:qi,question:q.q,correct:q.correct,total:questions.length,activePodium:podium||null};
   writeStateKeepVideo(state,function(ok){
     if(!ok){alert('Could not sync. Check Supabase.');return;}
     var cueBtn=document.getElementById('r4-cue-btn');
@@ -1058,6 +1130,7 @@ function renderFinalRevealControls(s){
         +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(40)">&#x23F1; 40s</button>'
         +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(60)">&#x23F1; 60s</button>'
         +'</div>'
+        +'<button class="p-btn-outline" id="timer-pause-btn" style="width:100%;margin-top:0;margin-bottom:8px;" onclick="toggleTimerPause()">&#x23F8; Pause</button>'
         +'<div id="p-timer"></div>'
         +'<button class="p-btn-gold" onclick="doFinalRevealCorrect()">&#x2605; Reveal correct answer</button>'
       :'<p style="text-align:center;color:var(--gold);font-family:Arial,sans-serif;font-size:13px;">\u2713 Done</p>');
@@ -1065,6 +1138,7 @@ function renderFinalRevealControls(s){
 
 function startFinalTimer(secs){
   timerTotal=secs;
+  timerIsPaused=false;
   var timerEnd=Date.now()+(secs*1000);
   var el=document.getElementById('p-timer');
   if(el) el.innerHTML=timerHTML(secs,secs);
@@ -1073,6 +1147,8 @@ function startFinalTimer(secs){
     st.timerEnd=timerEnd;
     st.timerTotal=secs;
     st.timerDone=false;
+    st.timerPaused=false;
+    st.timerPausedRemaining=null;
     writeStateKeepVideo(st,function(ok){
       console.log('Final timer written to Supabase:', ok, 'timerEnd:', timerEnd);
     });
@@ -1109,11 +1185,14 @@ function startBamboozlerPoll(){
 function buildTimerHTML(s){
   if(!s||!s.timerEnd) return '';
   if(s.timerDone) return '<div style="text-align:center;padding:8px 0;font-size:36px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
-  var remaining=Math.max(0,Math.round((s.timerEnd-Date.now())/1000));
   var total=s.timerTotal||20;
+  var remaining=s.timerPaused
+    ?Math.max(0,Math.round((s.timerPausedRemaining||0)/1000))
+    :Math.max(0,Math.round((s.timerEnd-Date.now())/1000));
   var pct=Math.max(0,remaining/total);
-  var col=remaining<=5?'#FF3333':remaining<=10?'#FF8800':'var(--cyan)';
+  var col=s.timerPaused?'var(--muted)':(remaining<=5?'#FF3333':remaining<=10?'#FF8800':'var(--cyan)');
   return '<div style="text-align:center;padding:8px 0;">'
+    +(s.timerPaused?'<div style="font-size:12px;letter-spacing:3px;color:var(--muted);font-family:Arial,sans-serif;margin-bottom:2px;">&#x23F8; PAUSED</div>':'')
     +'<div style="font-size:56px;font-weight:900;color:'+col+';font-family:Arial,sans-serif;line-height:1;">'+remaining+'</div>'
     +'<div style="height:7px;background:#1A0030;border-radius:4px;margin:10px 0;overflow:hidden;">'
     +'<div style="height:100%;width:'+(pct*100)+'%;background:'+col+';border-radius:4px;"></div>'
@@ -1126,6 +1205,10 @@ function tickRemoteTimer(elId, s){
   remoteTickTimer=setInterval(function(){
     var el=document.getElementById(elId);
     if(!el){ clearInterval(remoteTickTimer); return; }
+    if(s.timerPaused){
+      el.innerHTML=buildTimerHTML(s);
+      return; // frozen — don't expire while paused
+    }
     if(s.timerDone||Date.now()>=s.timerEnd){
       clearInterval(remoteTickTimer);
       el.innerHTML='<div style="text-align:center;padding:8px 0;font-size:36px;font-weight:900;color:#FF3333;font-family:Arial,sans-serif;">TIMES UP</div>';
@@ -1222,6 +1305,15 @@ function spellCheck(text,cb){
 var selectedOrder=null;
 var r2Cards=null;
 function renderBamboozlerR2(s){
+  if(s.mode==='r3'&&s.activePodium&&s.activePodium!==myPodium){
+    document.getElementById('b-body').innerHTML=
+      '<div style="text-align:center;padding:60px 20px;">'
+      +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:20px;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
+      +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">Podium '+s.activePodium+' is playing this question.</p>'
+      +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Sit tight \u2014 you\'ll get the next one.</p>'
+      +'</div>';
+    return;
+  }
   r2Cards={
     correct:{label:'Correct answer',text:s.correct,editable:false,locked:false,pos:null},
     bam1:{label:'Bamboozle 1',text:'',editable:true,locked:false,pos:null},
@@ -1410,6 +1502,15 @@ function confirmAndSubmit(){
 
 // R4 Bamboozler
 function renderBamboozlerR4(s){
+  if(s.activePodium&&s.activePodium!==myPodium){
+    document.getElementById('b-body').innerHTML=
+      '<div style="text-align:center;padding:60px 20px;">'
+      +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:20px;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
+      +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">Podium '+s.activePodium+' is playing this question.</p>'
+      +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Sit tight \u2014 you\'ll get the next one.</p>'
+      +'</div>';
+    return;
+  }
   var stmt=s.question.trim();
   var lastSpace=stmt.lastIndexOf(' ');
   var stem=lastSpace>=0?stmt.substring(0,lastSpace+1):stmt+' ';
@@ -1686,7 +1787,7 @@ function renderAudR2Cued(s){
   document.getElementById('aud-footer').innerHTML='<span class="pulsing">'+lockedCount+' of 3 answers locked \u2014 Bamboozler is arranging\u2026</span>';
   lastR2CuedPlaced=lockedCount;
   if(s.timerEnd){
-    if(!s.timerDone&&Date.now()<s.timerEnd) startTensionBed();
+    if(!s.timerDone&&!s.timerPaused&&Date.now()<s.timerEnd) startTensionBed();
     else stopTensionBed();
     tickRemoteTimer('aud-remote-timer',s);
   } else {
@@ -1924,7 +2025,7 @@ function renderAudFinal(s){
     +'<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);">'+gridHTML+timerHTML2+'</div>';
   document.getElementById('aud-footer').innerHTML=rev===0?'<span class="pulsing">The Bamboozles are coming\u2026</span>':rev<=n?rev+' of '+n+' revealed':'\u2605 Correct answer revealed!';
   if(s.timerEnd&&!correctRevealed){
-    if(!s.timerDone&&Date.now()<s.timerEnd) startTensionBed();
+    if(!s.timerDone&&!s.timerPaused&&Date.now()<s.timerEnd) startTensionBed();
     else stopTensionBed();
     tickRemoteTimer('aud-remote-timer',s);
   } else {
@@ -2770,7 +2871,7 @@ function startTensionBed(){
   if(!a) return;
   a.loop=true;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','Bamboozle_Loopable_thinking_tension-.mp3');
+    a.setAttribute('src','Bamboozle%20Loopable%20thinking%20tension-.mp3');
   } else {
     try{ a.currentTime=0; }catch(e){} // restart from the beginning — avoid load(), which re-fetches the resource and can reset the autoplay-unlock from the join gesture
   }
@@ -2789,7 +2890,7 @@ function playLockInSfx(){
   var a=document.getElementById('aud-lockin-sfx');
   if(!a) return;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','Bamboozle_Lock_In_Sound_Effect.mp3');
+    a.setAttribute('src','Bamboozle%20Lock%20In%20Sound%20Effect.mp3');
     a.play().catch(function(err){ console.log('Lock-in SFX play() failed:',err); });
   } else {
     try{ a.currentTime=0; }catch(e){}
@@ -2803,7 +2904,7 @@ function playSwooshSfx(){
   var a=document.getElementById('aud-swoosh-sfx');
   if(!a) return;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','Bamboozle_SWOOSH.mp3');
+    a.setAttribute('src','Bamboozle%20SWOOSH.mp3');
     a.play().catch(function(err){ console.log('Swoosh SFX play() failed:',err); });
   } else {
     try{ a.currentTime=0; }catch(e){}
@@ -2833,9 +2934,9 @@ function warmUpBuzzAudio(){
     var el=document.getElementById(id);
     if(!el) return;
     var srcMap={
-      'aud-tension-audio':'Bamboozle_Loopable_thinking_tension-.mp3',
-      'aud-lockin-sfx':'Bamboozle_Lock_In_Sound_Effect.mp3',
-      'aud-swoosh-sfx':'Bamboozle_SWOOSH.mp3'
+      'aud-tension-audio':'Bamboozle%20Loopable%20thinking%20tension-.mp3',
+      'aud-lockin-sfx':'Bamboozle%20Lock%20In%20Sound%20Effect.mp3',
+      'aud-swoosh-sfx':'Bamboozle%20SWOOSH.mp3'
     };
     if(!el.getAttribute('src')) el.setAttribute('src',srcMap[id]);
     var p=el.play();
