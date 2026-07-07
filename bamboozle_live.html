@@ -203,6 +203,7 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
         <select name="role" id="roleSelect" onchange="onRoleChange(this.value)">
           <option value="">-- Select role --</option>
           <option value="audience">Audience</option>
+          <option value="studio">Studio</option>
           <option value="bamboozler">Bamboozler</option>
           <option value="contestant">Contestant</option>
           <option value="producer">Producer</option>
@@ -259,6 +260,7 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
       <button onclick="openScoreboardPanel()" style="padding:6px 10px;background:transparent;border:1px solid var(--cyan);border-radius:6px;color:var(--cyan);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3C6; Scores</button>
       <button onclick="sendToTitles()" style="padding:6px 10px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3AC; Titles</button>
       <button onclick="sendToHolding()" style="padding:6px 10px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x23F8; Holding</button>
+      <button onclick="hideAudienceOverlay()" style="padding:6px 10px;background:transparent;border:1px solid var(--muted);border-radius:6px;color:var(--muted);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x2715; Hide</button>
       <div class="p-badge" id="p-badge"></div>
     </div>
   </div>
@@ -386,6 +388,7 @@ var webrtcPollTimer=null;         // dedicated poll loop for signaling (separate
 
 // ── State ──────────────────────────────────────────────────
 var role=null, sessionCode=null;
+var isStudioRole=false;
 var questions=[], allRows=[], headers=[];
 var pollTimer=null, lastHash='';
 var countdownTimer=null, countdownSecs=0;
@@ -558,7 +561,8 @@ function doJoin(){
   sessionCode=code;
   role=r;
 
-  if(r==='audience'){
+  if(r==='audience'||r==='studio'){
+    isStudioRole=(r==='studio');
     showScreen('audience');
     var audCode=document.getElementById('aud-code');
     if(audCode) audCode.textContent=sessionCode;
@@ -798,6 +802,7 @@ function r2Controls(q,qi,label){
     +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',20)">&#x23F1; 20s</button>'
     +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',30)">&#x23F1; 30s</button>'
     +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',40)">&#x23F1; 40s</button>'
+    +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startR2Timer('+qi+',60)">&#x23F1; 60s</button>'
     +'</div>'
     +'<div id="p-timer"></div>'
     +'<div class="p-section-label" style="margin-top:16px;">Reveal (waiting for Bamboozler...)</div>'
@@ -979,7 +984,7 @@ function cueFinal(qi){
 function startFinalReveal(qi){
   readState(function(s){
     if(!s){alert('Could not read session state.');return;}
-    var correct=questions[qi].correct;
+    var correct=(questions[qi].correct||'').toUpperCase();
     var answers=s.answers||[];
     if(!answers.length){alert('No answers found. Make sure contestants have submitted.');return;}
     var pool=answers.slice();
@@ -1018,6 +1023,7 @@ function renderFinalRevealControls(s){
         +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(20)">&#x23F1; 20s</button>'
         +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(30)">&#x23F1; 30s</button>'
         +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(40)">&#x23F1; 40s</button>'
+        +'<button class="p-btn-outline" style="flex:1;margin-top:0;" onclick="startFinalTimer(60)">&#x23F1; 60s</button>'
         +'</div>'
         +'<div id="p-timer"></div>'
         +'<button class="p-btn-gold" onclick="doFinalRevealCorrect()">&#x2605; Reveal correct answer</button>'
@@ -1223,7 +1229,7 @@ function renderR2Cards(){
         +'</div></div>';
     }
     var inputHTML=card.editable
-      ?'<div class="voice-wrap"><input class="bam-input" id="r2input-'+key+'" type="text" placeholder="A convincing wrong answer..." value="'+esc(card.text)+'" autocomplete="off"><button class="mic-btn" id="r2mic-'+key+'" onclick="startVoice(\'r2input-'+key+'\',\'r2mic-'+key+'\')" title="Voice input">\u1F3A4</button></div>'
+      ?'<div class="voice-wrap"><input class="bam-input" id="r2input-'+key+'" type="text" placeholder="A convincing wrong answer..." value="'+esc(card.text)+'" autocomplete="off" spellcheck="true"><button class="mic-btn" id="r2mic-'+key+'" onclick="startVoice(\'r2input-'+key+'\',\'r2mic-'+key+'\')" title="Voice input">\u1F3A4</button></div>'
       :'<div class="qtext" style="margin:8px 0;font-size:15px;">'+esc(card.text)+'</div>';
     var posButtons=labels.map(function(l,i){
       var used=taken.indexOf(i)!==-1;
@@ -1244,11 +1250,8 @@ function lockR2Answer(key,pos){
     var input=document.getElementById('r2input-'+key);
     var text=input?input.value.trim():'';
     if(!text){ alert('Type an answer first.'); return; }
-    document.getElementById('r2-cards').querySelectorAll('button').forEach(function(b){b.disabled=true;});
-    spellCheck(text,function(corrected){
-      card.text=(corrected&&corrected!==text&&!confirm('Spelling suggestion:\n\n"'+corrected+'"\n\nUse the corrected version? (Cancel keeps what you typed)'))?text:corrected;
-      finalizeR2Lock(key,pos);
-    });
+    card.text=text;
+    finalizeR2Lock(key,pos);
   } else {
     finalizeR2Lock(key,pos);
   }
@@ -1393,7 +1396,7 @@ function renderBamboozlerR4(s){
     +'<div style="background:var(--dark);border:2px solid var(--purple);border-radius:10px;padding:16px;">'
     +'<div class="section-label" style="margin-bottom:8px;">Bamboozle</div>'
     +'<div class="bam-label">Your fake last word</div>'
-    +'<div class="voice-wrap"><input class="bam-input" id="r4fake" type="text" placeholder="e.g. a type of fish..." autocomplete="off"><button class="mic-btn" id="mic-r4" onclick="startVoice(\u0027r4fake\u0027,\u0027mic-r4\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-r4fake" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
+    +'<div class="voice-wrap"><input class="bam-input" id="r4fake" type="text" placeholder="e.g. a type of fish..." autocomplete="off" spellcheck="true"><button class="mic-btn" id="mic-r4" onclick="startVoice(\u0027r4fake\u0027,\u0027mic-r4\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-r4fake" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
     +'<div id="r4preview" style="font-size:13px;color:var(--muted);font-family:Arial,sans-serif;margin-bottom:10px;min-height:18px;"></div>'
     +'<button class="submit-btn" id="r4bamBtn" onclick="submitR4bamCheck()" disabled>&#x1F3AF; Bamboozle!</button>'
     +'</div>';
@@ -1408,24 +1411,7 @@ function renderBamboozlerR4(s){
 function submitR4bamCheck(){
   var fake=document.getElementById('r4fake').value.trim();
   if(!fake)return;
-  document.getElementById('r4bamBtn').disabled=true;
-  document.getElementById('r4bamBtn').innerHTML='<span class="spinner"></span>Checking...';
-  spellCheck(fake,function(corrected){
-    if(corrected!==fake){
-      // Show correction
-      document.getElementById('r4preview').innerHTML=
-        '<div style="background:var(--panel);border:1px solid var(--gold);border-radius:8px;padding:10px;margin-top:8px;">'
-        +'<div style="font-size:10px;color:var(--gold);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;font-family:Arial,sans-serif;">Spelling corrected</div>'
-        +'<div style="font-size:13px;font-family:Arial,sans-serif;color:var(--white);">'+esc(corrected)+'</div>'
-        +'<div style="display:flex;gap:8px;margin-top:10px;">'
-        +'<button onclick="submitR4bam(false,\''+corrected.replace(/'/g,"\\'")+'\')" style="flex:1;padding:10px;background:var(--gold);border:none;border-radius:6px;color:var(--black);font-family:Arial,sans-serif;font-size:12px;font-weight:bold;cursor:pointer;">Use corrected</button>'
-        +'<button onclick="submitR4bam(false,\''+fake.replace(/'/g,"\\'")+'\')" style="flex:1;padding:10px;background:transparent;border:1px solid var(--purple);border-radius:6px;color:var(--muted);font-family:Arial,sans-serif;font-size:12px;cursor:pointer;">Keep original</button>'
-        +'</div></div>';
-      document.getElementById('r4bamBtn').style.display='none';
-    } else {
-      submitR4bam(false,fake);
-    }
-  });
+  submitR4bam(false,fake);
 }
 
 function submitR4bam(truthful,fakeWord){
@@ -1471,12 +1457,11 @@ function renderBamboozlerFinal(s){
     '<div class="q-card">'
     +'<div class="qlabel">Final &mdash; Q'+(s.qIdx+1)+'</div>'
     +'<div class="qtext">'+esc(s.question)+'</div>'
-    +'<div class="correct"><span>Correct: </span>'+esc(s.correct)+'</div>'
     +'</div>'
     +dots
     +'<div class="section-label">Player '+(playerNum+1)+' of 5 &mdash; pass the iPad</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:12px;">Don\'t show your answer to anyone!</p>'
-    +'<div class="voice-wrap"><input class="bam-input" id="finalAns" type="text" placeholder="Your Bamboozle answer..." autocomplete="off"><button class="mic-btn" id="mic-final" onclick="startVoice(\u0027finalAns\u0027,\u0027mic-final\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-finalAns" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
+    +'<div class="voice-wrap"><input class="bam-input" id="finalAns" type="text" placeholder="Your Bamboozle answer..." autocomplete="off" spellcheck="true"><button class="mic-btn" id="mic-final" onclick="startVoice(\u0027finalAns\u0027,\u0027mic-final\u0027)" title="Voice input">&#x1F3A4;</button></div><div id="voice-hint-finalAns" style="display:none;font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:-6px;margin-bottom:8px;padding:5px 10px;background:#1A1000;border-radius:6px;">&#x2139; Tap &#x1F3A4; on your keyboard to dictate</div>'
     +'<div id="final-ans-err" style="color:#FF6680;font-size:12px;font-family:Arial,sans-serif;margin-bottom:8px;min-height:16px;"></div>'
     +'<button class="submit-btn" id="finalSubmitBtn" onclick="submitFinalBam()">Submit &amp; pass on &#x25BA;</button>';
 }
@@ -1503,28 +1488,10 @@ function submitFinalBam(){
       return;
     }
     if(errEl) errEl.textContent='';
-
-    // Spell check and submit
-    var submitBtn=document.getElementById('finalSubmitBtn');
-    if(submitBtn){submitBtn.disabled=true;submitBtn.innerHTML='<span class="spinner"></span>Checking...';}
-    spellCheck(ans,function(corrected){
-      // Check corrected version too
-      if(corrected.toLowerCase()===correct){
-        if(errEl) errEl.textContent="That is the correct answer! Please enter a different one.";
-        if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Submit & pass on ►';}
-        return;
-      }
-      var dupCorrected=answers.some(function(a){return a.trim().toLowerCase()===corrected.toLowerCase();});
-      if(dupCorrected){
-        if(errEl) errEl.textContent="Someone already gave that answer! Please try something different.";
-        if(submitBtn){submitBtn.disabled=false;submitBtn.textContent='Submit & pass on ►';}
-        return;
-      }
-      var newAnswers=answers.slice();
-      newAnswers.push(corrected);
-      s.answers=newAnswers;
-      writeState(s,function(){renderBamboozlerFinal(s);});
-    });
+    var newAnswers=answers.slice();
+    newAnswers.push(ans.toUpperCase());
+    s.answers=newAnswers;
+    writeState(s,function(){renderBamboozlerFinal(s);});
   });
 }
 
@@ -1564,11 +1531,17 @@ function renderAudience(s){
   // Round 1 doesn't use the video composite layout — it often has more
   // answers than fit comfortably in the bottom-third panel, so it always
   // gets the plain full-width grid regardless of whether video is live.
-  var isR1=!!(s&&s.phase==='r1');
+  var isWideLayout=!!(s&&(s.phase==='r1'||s.phase==='final_reveal'));
   var audMainEl=document.getElementById('aud-main');
-  if(audMainEl) audMainEl.classList.toggle('tv-mode',!!(s&&s.videoLive&&!isR1));
+  if(audMainEl) audMainEl.classList.toggle('tv-mode',!!(s&&s.videoLive&&!isWideLayout));
   var vidSection=document.getElementById('aud-video-section');
-  if(vidSection&&isR1) vidSection.style.display='none';
+  if(vidSection){
+    if(isWideLayout){
+      vidSection.style.display='none';
+    } else if(s&&s.videoLive&&(audPeer||audConnected)){
+      vidSection.style.display='block';
+    }
+  }
 
   var wait=document.getElementById('aud-wait');
   var main=document.getElementById('aud-main');
@@ -1648,31 +1621,37 @@ function renderAudience(s){
     +'<p class="pulsing">Waiting to start…</p>';
 }
 
-var lastR2CuedPlaced=[];
+var lastR2CuedPlaced=0;
 var lastR2CuedQIdx=null;
 function renderAudR2Cued(s){
-  if(lastR2CuedQIdx!==s.qIdx){ lastR2CuedQIdx=s.qIdx; lastR2CuedPlaced=[]; }
+  if(lastR2CuedQIdx!==s.qIdx){ lastR2CuedQIdx=s.qIdx; lastR2CuedPlaced=0; }
   var label=s.roundLabel||'Round 2';
-  setAudHeader(label+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
-  updateVideoLowerThird(label,s.question);
+  var questionForDisplay=isStudioRole?'Get ready\u2026':s.question;
+  setAudHeader(label+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,questionForDisplay);
+  updateVideoLowerThird(label,questionForDisplay);
   var placed=s.r2Placed||[false,false,false];
-  var labels=['A','B','C'];
-  var hasNewLock=false;
-  var gridHTML=labels.map(function(l,i){
-    var isLocked=placed[i];
-    var isNew=isLocked&&!lastR2CuedPlaced[i];
-    if(isNew) hasNewLock=true;
-    return '<div class="opt-cell '+(isLocked?'shown':'blank')+'" style="position:relative;">'
-      +'<div class="opt-letter">'+l+'</div>'
-      +(isNew?'<div class="lock-badge">Locked In</div>':(isLocked?'<div style="font-family:Arial,sans-serif;font-size:11px;color:var(--gold);margin-top:6px;">Locked</div>':''))
-      +'</div>';
-  }).join('');
-  var timerHTML2=s.timerEnd?'<div id="aud-remote-timer" style="grid-column:1/-1;margin-top:8px;text-align:center;">'+buildTimerHTML(s)+'</div>':'';
-  document.getElementById('aud-opts').innerHTML=ltHeader(label,s.question)
-    +'<div class="opts-grid" style="grid-template-columns:repeat(3,1fr);">'+gridHTML+timerHTML2+'</div>';
   var lockedCount=placed.filter(Boolean).length;
+  var hasNewLock=lockedCount>lastR2CuedPlaced;
+
+  // Deliberately generic progress dots, NOT tied to specific A/B/C
+  // positions — the correct answer needs no typing, so it can lock in
+  // suspiciously fast, and showing WHICH letter locked first would let
+  // contestants infer which position is real just from watching order.
+  var dotsHTML='<div style="display:flex;gap:16px;justify-content:center;">'
+    +[0,1,2].map(function(i){
+      var filled=i<lockedCount;
+      var isNew=filled&&i===lockedCount-1&&hasNewLock;
+      return '<div style="width:28px;height:28px;border-radius:50%;background:'+(filled?'var(--gold)':'#2A0050')+';transition:background 0.3s;'+(isNew?'animation:lockPop 0.45s cubic-bezier(.34,1.56,.64,1);':'')+'"></div>';
+    }).join('')
+    +'</div>';
+
+  var timerHTML2=s.timerEnd?'<div id="aud-remote-timer" style="margin-top:20px;text-align:center;">'+buildTimerHTML(s)+'</div>':'';
+  document.getElementById('aud-opts').innerHTML=ltHeader(label,questionForDisplay)
+    +'<div class="opts-grid" style="grid-template-columns:1fr;"><div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:40px;">'
+    +dotsHTML+timerHTML2
+    +'</div></div>';
   document.getElementById('aud-footer').innerHTML='<span class="pulsing">'+lockedCount+' of 3 answers locked \u2014 Bamboozler is arranging\u2026</span>';
-  lastR2CuedPlaced=placed.slice();
+  lastR2CuedPlaced=lockedCount;
   if(s.timerEnd){
     if(!s.timerDone&&Date.now()<s.timerEnd) startTensionBed();
     else stopTensionBed();
@@ -1786,16 +1765,15 @@ var lastR1BuzzedBy=null;
 var lastR1QIdx=null;
 
 
-var lastR2CorrectRevealed=false;
+var lastR2Rev=-1;
 var lastR2RevealQIdx=null;
 function renderAudR2(s){
-  if(lastR2RevealQIdx!==s.qIdx){ lastR2RevealQIdx=s.qIdx; lastR2CorrectRevealed=false; }
+  if(lastR2RevealQIdx!==s.qIdx){ lastR2RevealQIdx=s.qIdx; lastR2Rev=-1; }
   var label=s.roundLabel||'Round 2';
   setAudHeader(label+' \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
   var rev=s.reveal||0;
-  var correctRevealed=rev>=4;
-  if(correctRevealed&&!lastR2CorrectRevealed){ playSwooshSfx(); }
-  lastR2CorrectRevealed=correctRevealed;
+  if(rev>lastR2Rev){ playSwooshSfx(); }
+  lastR2Rev=rev;
   var gridHTML=['A','B','C'].map(function(l,i){
     var shown=rev>i,isCorrect=rev>=4&&i===s.correctPos;
     var cls=isCorrect?'correct':shown?'shown':'blank';
@@ -1867,18 +1845,34 @@ function renderAudR4(s){
   document.getElementById('aud-footer').innerHTML=s.revealed?(s.truthful?'\u2714 Delivered truthfully':'\u1F3AF Bamboozled!'):'True or Bamboozle?';
 }
 
-var lastFinalCorrectRevealed=false;
+var lastFinalRev=-1;
 var lastFinalQIdx=null;
+function audFinalClick(i){
+  readState(function(s){
+    if(!s||s.phase!=='final_reveal') return;
+    var rev=s.reveal||0,n=(s.options||[]).length;
+    if(rev>n) return; // correct answer already revealed — no more scoring out
+    if(rev<=i) return; // this option hasn't been revealed yet
+    var struck=s.struckFinal||[];
+    var idx=struck.indexOf(i);
+    if(idx===-1) struck.push(i); else struck.splice(idx,1);
+    s.struckFinal=struck;
+    writeStateKeepVideo(s,function(){});
+  });
+}
+
 function renderAudFinal(s){
-  if(lastFinalQIdx!==s.qIdx){ lastFinalQIdx=s.qIdx; lastFinalCorrectRevealed=false; }
+  if(lastFinalQIdx!==s.qIdx){ lastFinalQIdx=s.qIdx; lastFinalRev=-1; }
   setAudHeader('The Final \u2014 Question '+(s.qIdx+1),s.question);
   var rev=s.reveal||0,n=s.options.length;
   var struck=s.struckFinal||[];
   var cols=n<=3?3:n<=4?4:3;
   var labels=['A','B','C','D','E','F'];
   var correctRevealed=rev>n;
-  if(correctRevealed&&!lastFinalCorrectRevealed){ playSwooshSfx(); }
-  lastFinalCorrectRevealed=correctRevealed;
+  var justCorrectRevealed=correctRevealed&&lastFinalRev<=n;
+  if(rev>lastFinalRev){ playSwooshSfx(); }
+  if(justCorrectRevealed){ playLockInSfx(); }
+  lastFinalRev=rev;
   var gridHTML=s.options.map(function(opt,i){
     var shown=rev>i;
     var isCorrect=correctRevealed&&i===s.correctPos;
@@ -1988,22 +1982,25 @@ function contestantBuzz(){
 // Round 2/3 — A B C selection
 function renderContestantR2Cued(s){
   var placed=s.r2Placed||[false,false,false];
-  var labels=['A','B','C'];
+  var lockedCount=placed.filter(Boolean).length;
+  // Generic dots only — deliberately not tied to specific A/B/C positions,
+  // so contestants can't infer which position is real from watching which
+  // one locks in first (the correct answer needs no typing, so it can
+  // lock in noticeably faster than a typed fake one).
+  var dotsHTML='<div style="display:flex;gap:14px;justify-content:center;margin-top:8px;">'
+    +[0,1,2].map(function(i){
+      var filled=i<lockedCount;
+      return '<div style="width:22px;height:22px;border-radius:50%;background:'+(filled?'var(--gold)':'#2A0050')+';transition:background 0.3s;"></div>';
+    }).join('')
+    +'</div>';
   document.getElementById('c-body').innerHTML=
     '<div class="q-card" style="border-color:var(--magenta);">'
     +'<div class="qlabel">'+(s.roundLabel||'Round 2')+'</div>'
     +'<div class="qtext">'+esc(s.question)+'</div>'
     +'</div>'
     +'<div class="section-label">Bamboozler is arranging answers\u2026</div>'
-    +'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">'
-    +labels.map(function(l,i){
-      var isLocked=placed[i];
-      return '<div style="position:relative;padding:20px;text-align:center;border-radius:10px;background:'+(isLocked?'var(--panel)':'#060010')+';border:2px solid '+(isLocked?'var(--gold)':'var(--purple)')+';">'
-        +'<div style="font-size:20px;font-weight:900;color:var(--white);">'+l+'</div>'
-        +(isLocked?'<div style="margin-top:6px;font-size:11px;color:var(--gold);font-family:Arial,sans-serif;letter-spacing:1px;">LOCKED</div>':'<div style="margin-top:6px;font-size:11px;color:var(--muted);font-family:Arial,sans-serif;">waiting</div>')
-        +'</div>';
-    }).join('')
-    +'</div>';
+    +dotsHTML
+    +'<p style="text-align:center;font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:12px;">'+lockedCount+' of 3 locked</p>';
 }
 
 function renderContestantR2(s){
@@ -2070,6 +2067,16 @@ function sendToTitles(){
   });
 }
 
+function hideAudienceOverlay(){
+  readState(function(s){
+    var state=s||{phase:'idle',total:0};
+    state.phase='idle';
+    writeStateKeepVideo(state,function(ok){
+      console.log('Overlay hidden:', ok);
+    });
+  });
+}
+
 // ── Scoreboard (persists across every round transition) ────
 function openScoreboardPanel(){
   readState(function(s){
@@ -2102,6 +2109,7 @@ function renderScoreboardPanel(sb){
     +'<button onclick="addContestantScore()" class="p-btn-gold" style="padding:10px 16px;margin-top:0;width:auto;">Add</button>'
     +'</div>'
     +'<button onclick="sendToScoreboard()" class="p-btn-gold" style="width:100%;margin-top:16px;">&#x1F4FA; Show on TV</button>'
+    +'<button onclick="hideAudienceOverlay()" style="width:100%;margin-top:8px;padding:11px;background:transparent;border:1px solid var(--muted);border-radius:8px;color:var(--muted);font-family:Arial,sans-serif;font-size:12px;cursor:pointer;">Hide from TV</button>'
     +'<button onclick="closeScoreboardPanel()" style="width:100%;margin-top:8px;padding:11px;background:transparent;border:1px solid var(--purple);border-radius:8px;color:var(--muted);font-family:Arial,sans-serif;font-size:12px;cursor:pointer;">Close</button>';
   var input=document.getElementById('new-contestant-name');
   if(input){
@@ -2519,12 +2527,19 @@ function joinAudienceVideo(){
     if(remoteVideo && ev.streams && ev.streams[0]){
       remoteVideo.srcObject=ev.streams[0];
       document.getElementById('aud-video-section').style.display='block';
+      remoteVideo.muted=false; // try for real sound directly — the join-time warm-up should have unlocked this
       var p=remoteVideo.play();
       if(p&&p.then){
         p.then(function(){
-          var btn=document.getElementById('aud-unmute-btn');
-          if(btn) btn.style.display='block';
-        }).catch(function(err){ console.log('Remote video play() failed even muted:',err); });
+          // Unmuted playback worked — no tap needed, keep the button hidden
+        }).catch(function(err){
+          console.log('Unmuted play() blocked, falling back to muted + tap-to-unmute:',err);
+          remoteVideo.muted=true;
+          remoteVideo.play().then(function(){
+            var btn=document.getElementById('aud-unmute-btn');
+            if(btn) btn.style.display='block';
+          }).catch(function(err2){ console.log('Remote video play() failed even muted:',err2); });
+        });
       }
     }
   };
@@ -2639,7 +2654,7 @@ function showAudTitles(){
   if(!v) return;
   var btn=document.getElementById('aud-titles-unmute-btn');
   if(btn) btn.style.display='none';
-  v.muted=true; // guaranteed to autoplay; offer unmute once it's actually rolling
+  v.muted=false; // try for real sound directly — the join-time warm-up should have unlocked this
   if(!v.getAttribute('src')){
     v.setAttribute('src','Bam%20Titles.mp4');
   } else {
@@ -2650,8 +2665,14 @@ function showAudTitles(){
     v.load();
   }
   v.play().then(function(){
-    if(btn) btn.style.display='block';
-  }).catch(function(err){ console.log('Titles video play() failed:',err); });
+    // Unmuted playback worked — no tap needed
+  }).catch(function(err){
+    console.log('Unmuted titles play() blocked, falling back to muted + tap-to-unmute:',err);
+    v.muted=true;
+    v.play().then(function(){
+      if(btn) btn.style.display='block';
+    }).catch(function(err2){ console.log('Titles video play() failed even muted:',err2); });
+  });
 }
 function hideAudTitles(){
   if(!audTitlesActive) return;
@@ -2731,6 +2752,41 @@ function warmUpBuzzAudio(){
     }
     if(window.__buzzAudioCtx.state==='suspended') window.__buzzAudioCtx.resume();
   }catch(e){ /* Web Audio not available — buzz tones just won't play */ }
+  // Also unlock the tension bed / lock-in / swoosh <audio> elements. These
+  // only ever get triggered from async poll callbacks, never from a direct
+  // tap — without this, browsers block them from playing at all (not
+  // intermittently, but every single time), since a gesture-free .play()
+  // is what autoplay policy exists to stop. Doing one real (if near-silent)
+  // play+pause of each during this join tap satisfies that requirement for
+  // every later gesture-free .play() call on the same element.
+  ['aud-tension-audio','aud-lockin-sfx','aud-swoosh-sfx'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    var srcMap={
+      'aud-tension-audio':'Bamboozle_Loopable_thinking_tension-.mp3',
+      'aud-lockin-sfx':'Bamboozle_Lock_In_Sound_Effect.mp3',
+      'aud-swoosh-sfx':'Bamboozle_SWOOSH.mp3'
+    };
+    if(!el.getAttribute('src')) el.setAttribute('src',srcMap[id]);
+    var p=el.play();
+    if(p&&p.then){
+      p.then(function(){ el.pause(); el.currentTime=0; }).catch(function(err){ console.log('Warm-up play failed for '+id+':',err); });
+    }
+  });
+  // Warm up the video elements too (Bamboozler camera feed + titles video)
+  // by briefly playing them unmuted during this same gesture. This doesn't
+  // give them anything to actually play yet (no src/srcObject), but on most
+  // browsers it's enough to unlock LATER unmuted .play() calls on the same
+  // element without needing another tap once real content arrives.
+  ['aud-remote-video','aud-titles-video'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(!el) return;
+    try{
+      el.muted=false;
+      var p=el.play();
+      if(p&&p.then){ p.then(function(){ el.pause(); }).catch(function(){ el.muted=true; }); }
+    }catch(e){}
+  });
 }
 function playBuzzTone(name){
   try{
