@@ -262,6 +262,7 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
       <button onclick="openScoreboardPanel()" style="padding:6px 10px;background:transparent;border:1px solid var(--cyan);border-radius:6px;color:var(--cyan);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3C6; Scores</button>
       <button onclick="sendToTitles()" style="padding:6px 10px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3AC; Titles</button>
+      <button onclick="sendToSting()" style="padding:6px 10px;background:transparent;border:1px solid var(--cyan);border-radius:6px;color:var(--cyan);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x26A1; Sting</button>
       <button onclick="sendToHolding()" style="padding:6px 10px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x23F8; Holding</button>
       <button onclick="hideAudienceOverlay()" style="padding:6px 10px;background:transparent;border:1px solid var(--muted);border-radius:6px;color:var(--muted);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x2715; Hide</button>
       <div class="p-badge" id="p-badge"></div>
@@ -318,6 +319,10 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
   <div id="aud-titles" style="display:none;flex:1;position:relative;background:#000;">
     <video id="aud-titles-video" style="width:100%;height:100%;object-fit:contain;display:block;" playsinline muted></video>
     <button id="aud-titles-unmute-btn" onclick="unmuteTitlesVideo()" style="display:none;position:absolute;top:16px;right:16px;z-index:5;padding:10px 18px;border-radius:24px;border:none;background:rgba(0,0,0,0.7);color:#fff;font-family:Arial,sans-serif;font-size:13px;cursor:pointer;">&#x1F507; Tap for sound</button>
+  </div>
+  <div id="aud-sting" style="display:none;flex:1;position:relative;background:#000;">
+    <video id="aud-sting-video" style="width:100%;height:100%;object-fit:contain;display:block;" playsinline muted></video>
+    <button id="aud-sting-unmute-btn" onclick="unmuteStingVideo()" style="display:none;position:absolute;top:16px;right:16px;z-index:5;padding:10px 18px;border-radius:24px;border:none;background:rgba(0,0,0,0.7);color:#fff;font-family:Arial,sans-serif;font-size:13px;cursor:pointer;">&#x1F507; Tap for sound</button>
   </div>
   <audio id="aud-tension-audio" preload="auto"></audio>
   <audio id="aud-lockin-sfx" preload="auto"></audio>
@@ -1694,6 +1699,20 @@ function renderAudience(s){
     if(titlesEl) titlesEl.style.display='none';
     hideAudTitles();
   }
+
+  // Short sting video
+  var stingEl=document.getElementById('aud-sting');
+  if(s&&s.phase==='sting'){
+    wait.style.display='none'; main.style.display='none'; done.style.display='none';
+    var holdingElS2=document.getElementById('aud-holding');
+    if(holdingElS2) holdingElS2.style.display='none';
+    if(stingEl) stingEl.style.display='flex';
+    showAudSting();
+    return;
+  } else {
+    if(stingEl) stingEl.style.display='none';
+    hideAudSting();
+  }
   if(!(s&&(s.phase==='r2_cued'||s.phase==='final_reveal'))) stopTensionBed();
 
   // Active question phases
@@ -2234,6 +2253,16 @@ function sendToTitles(){
     state.phase='titles';
     writeStateKeepVideo(state,function(ok){
       console.log('Titles written:', ok);
+    });
+  });
+}
+
+function sendToSting(){
+  readState(function(s){
+    var state=s||{phase:'sting',total:0};
+    state.phase='sting';
+    writeStateKeepVideo(state,function(ok){
+      console.log('Sting written:', ok);
     });
   });
 }
@@ -2862,6 +2891,47 @@ function unmuteTitlesVideo(){
   if(btn) btn.style.display='none';
 }
 
+var audStingActive=false;
+function showAudSting(){
+  if(audStingActive) return; // already playing — don't restart on every poll tick
+  audStingActive=true;
+  var v=document.getElementById('aud-sting-video');
+  if(!v) return;
+  var btn=document.getElementById('aud-sting-unmute-btn');
+  if(btn) btn.style.display='none';
+  v.muted=false; // try for real sound directly — the join-time warm-up should have unlocked this
+  if(!v.getAttribute('src')){
+    v.setAttribute('src','short_sting.mp4');
+  } else {
+    try{ v.currentTime=0; }catch(e){} // restart from the beginning — avoid load(), which re-fetches the resource and can reset the autoplay-unlock from the join gesture
+  }
+  v.play().then(function(){
+    // Unmuted playback worked — no tap needed
+  }).catch(function(err){
+    console.log('Unmuted sting play() blocked, falling back to muted + tap-to-unmute:',err);
+    v.muted=true;
+    v.play().then(function(){
+      if(btn) btn.style.display='block';
+    }).catch(function(err2){ console.log('Sting video play() failed even muted:',err2); });
+  });
+}
+function hideAudSting(){
+  if(!audStingActive) return;
+  audStingActive=false;
+  var v=document.getElementById('aud-sting-video');
+  if(v){ v.pause(); }
+  var btn=document.getElementById('aud-sting-unmute-btn');
+  if(btn) btn.style.display='none';
+}
+function unmuteStingVideo(){
+  var v=document.getElementById('aud-sting-video');
+  var btn=document.getElementById('aud-sting-unmute-btn');
+  if(!v) return;
+  v.muted=false;
+  v.play().catch(function(err){ console.log('Unmute play() failed:',err); });
+  if(btn) btn.style.display='none';
+}
+
 // ── Tension bed audio for the R2/R3 20s countdown ──────────
 var tensionBedActive=false;
 function startTensionBed(){
@@ -2949,7 +3019,7 @@ function warmUpBuzzAudio(){
   // give them anything to actually play yet (no src/srcObject), but on most
   // browsers it's enough to unlock LATER unmuted .play() calls on the same
   // element without needing another tap once real content arrives.
-  ['aud-remote-video','aud-titles-video'].forEach(function(id){
+  ['aud-remote-video','aud-titles-video','aud-sting-video'].forEach(function(id){
     var el=document.getElementById(id);
     if(!el) return;
     try{
