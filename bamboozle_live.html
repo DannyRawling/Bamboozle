@@ -2901,7 +2901,7 @@ function showAudSting(){
   if(btn) btn.style.display='none';
   v.muted=false; // try for real sound directly — the join-time warm-up should have unlocked this
   if(!v.getAttribute('src')){
-    v.setAttribute('src','short_sting.mp4');
+    v.setAttribute('src','short%20sting.mp4');
   } else {
     try{ v.currentTime=0; }catch(e){} // restart from the beginning — avoid load(), which re-fetches the resource and can reset the autoplay-unlock from the join gesture
   }
