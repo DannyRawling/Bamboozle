@@ -735,10 +735,37 @@ function r1Controls(q,qi){
   // navigating to an R1 question puts it live right away, no separate cue step)
   pushR1(qi);
   startR1ProducerPoll(qi);
+  var answersHTML='';
+  if(q.r1answers&&q.r1answers.length){
+    answersHTML='<div class="p-section-label" style="margin-top:14px;">Answers \u2014 tap to strike out</div>'
+      +'<div id="p-r1-answers"></div>';
+  }
   return '<div class="p-section-label">Round 1 — Q'+(qi+1)+' — Buzzer</div>'
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Contestants buzz in to answer. First buzz locks everyone else out until you mark it correct or wrong.</p>'
     +'<div id="p-r1-status" style="margin-bottom:14px;"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">Waiting for a buzz…</p></div>'
-    +'<button class="p-btn-next" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
+    +answersHTML
+    +'<button class="p-btn-next" style="margin-top:16px;" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
+}
+
+function renderP_R1Answers(s){
+  var el=document.getElementById('p-r1-answers');
+  if(!el||!s||!s.r1answers) return;
+  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
+  var struck=s.r1Struck||[];
+  var cols=s.r1answers.length<=6?2:3;
+  el.innerHTML='<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:8px;">'
+    +s.r1answers.map(function(ans,i){
+      var isCorrect=s.resolved&&i===s.r1correct;
+      var isStruck=struck.indexOf(i)!==-1&&!isCorrect;
+      var bg=isCorrect?'#001800':isStruck?'#1A0010':'var(--panel)';
+      var border=isCorrect?'var(--gold)':isStruck?'#4A0030':'var(--purple)';
+      var textStyle=isStruck?'text-decoration:line-through;color:var(--muted);':'color:var(--white);';
+      return '<div onclick="r1StrikeAnswer('+i+')" style="padding:10px;border-radius:8px;background:'+bg+';border:2px solid '+border+';cursor:pointer;">'
+        +'<div style="font-size:11px;font-weight:900;color:'+(isCorrect?'var(--gold)':'var(--magenta)')+';margin-bottom:2px;">'+labels[i]+'</div>'
+        +'<div style="font-size:13px;font-family:Arial,sans-serif;'+textStyle+'">'+esc(ans)+'</div>'
+        +'</div>';
+    }).join('')
+    +'</div>';
 }
 
 var r1ProducerPollTimer=null;
@@ -747,6 +774,7 @@ function startR1ProducerPoll(qi){
   r1ProducerPollTimer=setInterval(function(){
     readState(function(s){
       if(!s||s.qIdx!==qi||s.phase!=='r1')return;
+      renderP_R1Answers(s);
       var el=document.getElementById('p-r1-status');
       if(!el)return;
       if(s.resolved){
@@ -787,7 +815,7 @@ function resolveR1(correct){
 
 function pushR1(qi){
   var q=questions[qi];
-  var state={phase:'r1',qIdx:qi,question:q.q,correct:q.correct,r1answers:q.r1answers,r1correct:q.r1correct,buzzedBy:null,buzzedAt:null,lockedOut:[],resolved:false,total:questions.length};
+  var state={phase:'r1',qIdx:qi,question:q.q,correct:q.correct,r1answers:q.r1answers,r1correct:q.r1correct,r1Struck:[],buzzedBy:null,buzzedAt:null,lockedOut:[],resolved:false,total:questions.length};
   writeStateKeepVideo(state,function(){});
 }
 
@@ -1006,14 +1034,19 @@ function renderFinalRevealControls(s){
   var rev=s.reveal||0;
   var n=s.options.length;
   var labels=['A','B','C','D','E','F'];
+  var correctRevealed=rev>n;
+  var struck=s.struckFinal||[];
   el.innerHTML=
     '<div style="margin-bottom:12px;">'
     +s.options.map(function(opt,i){
       var isC=i===s.correctPos,shown=rev>i;
-      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--dark);border:1px solid '+(isC?'var(--gold)':'var(--purple)')+';border-radius:8px;margin-bottom:6px;">'
+      var isStruck=struck.indexOf(i)!==-1&&!isC;
+      var clickable=shown&&!correctRevealed;
+      var textStyle=isStruck?'text-decoration:line-through;color:var(--muted);':(shown?'color:var(--white);':'color:#2A0050;');
+      return '<div '+(clickable?'onclick="audFinalClick('+i+')"':'')+' style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:'+(isStruck?'#1A0010':'var(--dark)')+';border:1px solid '+(isC?'var(--gold)':isStruck?'#4A0030':'var(--purple)')+';border-radius:8px;margin-bottom:6px;'+(clickable?'cursor:pointer;':'')+'">'
         +'<div style="width:24px;height:24px;border-radius:50%;background:'+(isC?'var(--gold)':'var(--magenta)')+';display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900;color:'+(isC?'var(--black)':'var(--white)')+';">'+labels[i]+'</div>'
-        +'<div style="flex:1;font-size:12px;font-family:Arial,sans-serif;color:'+(shown?'var(--white)':'#2A0050')+';">'+esc(opt)+'</div>'
-        +(isC?'<div style="font-size:10px;color:var(--gold);font-family:Arial,sans-serif;">CORRECT</div>':'')
+        +'<div style="flex:1;font-size:12px;font-family:Arial,sans-serif;'+textStyle+'">'+esc(opt)+'</div>'
+        +(isC?'<div style="font-size:10px;color:var(--gold);font-family:Arial,sans-serif;">CORRECT</div>':clickable?'<div style="font-size:9px;color:var(--muted);font-family:Arial,sans-serif;">tap to strike</div>':'')
         +'</div>';
     }).join('')
     +'</div>'
@@ -1122,7 +1155,7 @@ function renderBamboozlerR1(s){
 function renderBamboozlerWaiting(){
   document.getElementById('b-body').innerHTML=
     '<div style="text-align:center;padding:60px 20px;">'
-    +'<div style="font-size:40px;margin-bottom:16px;">&#x1F3AF;</div>'
+    +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:20px;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
     +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">Waiting for the Producer to cue a question...</p>'
     +'</div>';
 }
@@ -1724,15 +1757,18 @@ function renderAudR1(s){
   var answers=s.r1answers||[];
   var cols=answers.length<=6?2:3;
 
-  // Read-only reference display of the multiple-choice answers — Round 1
-  // no longer uses these for claiming, but the audience still needs to
-  // see what the options actually are while someone's buzzed in.
+  // Reference display of the multiple-choice answers, tappable to strike
+  // out ones that have already gone (e.g. a wrong buzz guessed it), so
+  // everyone watching can see the shrinking pool of live possibilities.
+  var struck=s.r1Struck||[];
   var answersGridHTML='';
   if(answers.length){
     answersGridHTML='<div class="opts-grid" style="grid-template-columns:repeat('+cols+',1fr);margin-bottom:14px;">'
       +answers.map(function(ans,i){
         var isCorrect=s.resolved&&i===s.r1correct;
-        return '<div class="opt-cell '+(isCorrect?'correct':'shown')+'"><div class="opt-letter">'+labels[i]+'</div><div class="opt-text" style="font-size:clamp(12px,2vw,18px);">'+esc(ans)+'</div></div>';
+        var isStruck=struck.indexOf(i)!==-1&&!isCorrect;
+        var cls=isCorrect?'correct':isStruck?'struck':'shown';
+        return '<div class="opt-cell '+cls+'"><div class="opt-letter">'+labels[i]+'</div><div class="opt-text" style="font-size:clamp(12px,2vw,18px);">'+esc(ans)+'</div></div>';
       }).join('')
       +'</div>';
   }
@@ -1857,7 +1893,7 @@ function audFinalClick(i){
     var idx=struck.indexOf(i);
     if(idx===-1) struck.push(i); else struck.splice(idx,1);
     s.struckFinal=struck;
-    writeStateKeepVideo(s,function(){});
+    writeStateKeepVideo(s,function(){ renderFinalRevealControls(s); });
   });
 }
 
@@ -1877,9 +1913,8 @@ function renderAudFinal(s){
     var shown=rev>i;
     var isCorrect=correctRevealed&&i===s.correctPos;
     var isStruck=struck.indexOf(i)!==-1&&!isCorrect;
-    var clickable=shown&&!correctRevealed;
     var cls=isCorrect?'correct':isStruck?'struck':shown?'shown':'blank';
-    return '<div class="opt-cell '+cls+'" '+(clickable?'onclick="audFinalClick('+i+')"':'')+' style="cursor:'+(clickable?'pointer':'default')+';">'
+    return '<div class="opt-cell '+cls+'">'
       +'<div class="opt-letter">'+labels[i]+'</div>'
       +'<div class="opt-text" style="font-size:clamp(12px,2vw,20px);">'+(shown?esc(opt):'')+'</div>'
       +'</div>';
@@ -1916,7 +1951,7 @@ function startContestantPoll(){
 function renderContestantWaiting(){
   document.getElementById('c-body').innerHTML=
     '<div style="text-align:center;padding:60px 20px;">'
-    +'<div style="font-size:40px;margin-bottom:16px;">&#x1F3AF;</div>'
+    +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:20px;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
     +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:16px;">Hi '+esc(contestantName)+'!</p>'
     +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Waiting for the next question...</p>'
     +'</div>';
@@ -1930,6 +1965,27 @@ function renderContestantForState(s){
 }
 
 // Round 1 — fastest finger first: claimed answers vanish for everyone
+function renderContestantR1AnswerList(s){
+  var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
+  var answers=s.r1answers||[];
+  if(!answers.length) return '';
+  var struck=s.r1Struck||[];
+  var cols=answers.length<=6?2:3;
+  return '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:8px;margin-bottom:14px;">'
+    +answers.map(function(ans,i){
+      var isCorrect=s.resolved&&i===s.r1correct;
+      var isStruck=struck.indexOf(i)!==-1&&!isCorrect;
+      var bg=isCorrect?'#001800':isStruck?'#1A0010':'var(--dark)';
+      var border=isCorrect?'var(--gold)':isStruck?'#4A0030':'var(--purple)';
+      var textStyle=isStruck?'text-decoration:line-through;color:var(--muted);':'color:var(--white);';
+      return '<div style="padding:10px;border-radius:8px;background:'+bg+';border:2px solid '+border+';">'
+        +'<div style="font-size:11px;font-weight:900;color:'+(isCorrect?'var(--gold)':'var(--magenta)')+';margin-bottom:2px;">'+labels[i]+'</div>'
+        +'<div style="font-size:13px;font-family:Arial,sans-serif;'+textStyle+'">'+esc(ans)+'</div>'
+        +'</div>';
+    }).join('')
+    +'</div>';
+}
+
 function renderContestantR1(s){
   var iBuzzed=s.buzzedBy===contestantName;
   var someoneElseBuzzed=!!s.buzzedBy&&!iBuzzed;
@@ -1941,6 +1997,7 @@ function renderContestantR1(s){
       +'<div class="qlabel" style="color:var(--gold);">Round 1 \u2014 Result</div>'
       +'<div class="qtext">'+esc(s.question)+'</div>'
       +'</div>'
+      +renderContestantR1AnswerList(s)
       +(iBuzzed
         ?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:14px;text-align:center;color:var(--gold);font-family:Arial,sans-serif;font-size:15px;">You got it right! \uD83C\uDF89</div>'
         :'<div style="background:var(--dark);border:1px solid var(--purple);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">'+esc(s.buzzedBy||'Someone')+' got it right.</div>');
@@ -1963,7 +2020,20 @@ function renderContestantR1(s){
     +'<div class="qlabel">Round 1 \u2014 Buzzer</div>'
     +'<div class="qtext">'+esc(s.question)+'</div>'
     +'</div>'
+    +renderContestantR1AnswerList(s)
     +actionHTML;
+}
+
+function r1StrikeAnswer(i){
+  readState(function(s){
+    if(!s||s.phase!=='r1') return;
+    if(s.resolved) return; // no more striking once resolved
+    var struck=s.r1Struck||[];
+    var idx=struck.indexOf(i);
+    if(idx===-1) struck.push(i); else struck.splice(idx,1);
+    s.r1Struck=struck;
+    writeStateKeepVideo(s,function(){ renderP_R1Answers(s); });
+  });
 }
 
 function contestantBuzz(){
@@ -2702,7 +2772,7 @@ function startTensionBed(){
   if(!a.getAttribute('src')){
     a.setAttribute('src','Bamboozle_Loopable_thinking_tension-.mp3');
   } else {
-    a.load(); // restart from the beginning
+    try{ a.currentTime=0; }catch(e){} // restart from the beginning — avoid load(), which re-fetches the resource and can reset the autoplay-unlock from the join gesture
   }
   a.play().catch(function(err){ console.log('Tension bed play() failed:',err); });
 }
@@ -2722,7 +2792,7 @@ function playLockInSfx(){
     a.setAttribute('src','Bamboozle_Lock_In_Sound_Effect.mp3');
     a.play().catch(function(err){ console.log('Lock-in SFX play() failed:',err); });
   } else {
-    a.load();
+    try{ a.currentTime=0; }catch(e){}
     a.play().catch(function(err){ console.log('Lock-in SFX play() failed:',err); });
   }
 }
@@ -2736,7 +2806,7 @@ function playSwooshSfx(){
     a.setAttribute('src','Bamboozle_SWOOSH.mp3');
     a.play().catch(function(err){ console.log('Swoosh SFX play() failed:',err); });
   } else {
-    a.load();
+    try{ a.currentTime=0; }catch(e){}
     a.play().catch(function(err){ console.log('Swoosh SFX play() failed:',err); });
   }
 }
