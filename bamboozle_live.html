@@ -756,7 +756,16 @@ function r1Controls(q,qi){
     +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Contestants buzz in to answer. First buzz locks everyone else out until you mark it correct or wrong.</p>'
     +'<div id="p-r1-status" style="margin-bottom:14px;"><p style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;">Waiting for a buzz…</p></div>'
     +answersHTML
-    +'<button class="p-btn-next" style="margin-top:16px;" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
+    +'<button class="p-btn-gold" style="width:100%;margin-top:16px;" onclick="revealR1Correct()">&#x2605; Reveal correct answer</button>'
+    +'<button class="p-btn-next" style="margin-top:8px;" onclick="producerNav('+(qi+1)+')">Next question &#x25BA;</button>';
+}
+
+function revealR1Correct(){
+  readState(function(s){
+    if(!s||s.phase!=='r1') return;
+    s.resolved=true;
+    writeStateKeepVideo(s,function(){});
+  });
 }
 
 function renderP_R1Answers(s){
@@ -883,6 +892,8 @@ function startRevealPoll(qi){
       if(!s||s.qIdx!==qi)return;
       if(s.phase==='r2'&&s.options){
         clearInterval(pollTimer);pollTimer=null;
+        stopCountdown();
+        timerIsPaused=false;
         renderRevealControls(s);
       }
       if(s.phase==='final_ready'&&s.answers&&s.answers.length>=5){
@@ -1232,7 +1243,9 @@ function renderBamboozlerR1(s){
     +'<div class="correct"><span>Correct: </span>'+esc(s.correct)+'</div>'
     +'</div>'
     +(s.resolved
-      ?'<div style="text-align:center;padding:24px;background:#001800;border:1px solid var(--gold);border-radius:10px;"><div style="font-size:20px;font-weight:900;color:var(--gold);">&#x1F389; '+esc(s.buzzedBy||'')+' got it right!</div></div>'
+      ?(s.buzzedBy
+        ?'<div style="text-align:center;padding:24px;background:#001800;border:1px solid var(--gold);border-radius:10px;"><div style="font-size:20px;font-weight:900;color:var(--gold);">&#x1F389; '+esc(s.buzzedBy)+' got it right!</div></div>'
+        :'<div style="text-align:center;padding:24px;background:#001800;border:1px solid var(--gold);border-radius:10px;"><div style="font-size:16px;font-weight:900;color:var(--gold);">Correct answer revealed</div></div>')
       :s.buzzedBy
         ?'<div style="text-align:center;padding:24px;background:var(--dark);border:2px solid var(--gold);border-radius:10px;"><div style="font-size:22px;font-weight:900;color:var(--gold);">&#x1F514; '+esc(s.buzzedBy)+'</div><div style="font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:6px;">is answering &mdash; mark it on the Producer screen</div></div>'
         :'<div style="text-align:center;padding:24px;background:var(--dark);border:1px solid var(--purple);border-radius:10px;"><p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">Waiting for a buzz&hellip;</p>'
@@ -1243,8 +1256,10 @@ function renderBamboozlerR1(s){
 function renderBamboozlerWaiting(){
   document.getElementById('b-body').innerHTML=
     '<div style="text-align:center;padding:60px 20px;">'
-    +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:20px;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
-    +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">Waiting for the Producer to cue a question...</p>'
+    +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:0;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
+    +'<div style="margin:20px auto 0;width:80%;max-width:280px;height:4px;background:linear-gradient(90deg,transparent,var(--magenta),var(--cyan),transparent);border-radius:2px;"></div>'
+    +'<p style="margin-top:16px;font-family:Arial,sans-serif;font-size:12px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;">Do you have an answer for everything?</p>'
+    +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:14px;margin-top:24px;">Waiting for the Producer to cue a question...</p>'
     +'</div>';
 }
 
@@ -1653,9 +1668,14 @@ var lastAudPhaseSeen=null;
 function renderAudience(s){
   // Connect to (or disconnect from) the Bamboozler's camera feed based on
   // the shared videoLive flag. This runs every time state changes, which
-  // is exactly when videoLive would flip.
-  if(s&&s.videoLive&&!audPeer&&!audConnecting){ joinAudienceVideo(); }
-  if(s&&!s.videoLive&&(audPeer||audConnecting)){ stopAudienceVideoView(); }
+  // is exactly when videoLive would flip. Studio never connects at all —
+  // it's meant to be a plain, video-free overflow/thinking-time screen.
+  if(!isStudioRole){
+    if(s&&s.videoLive&&!audPeer&&!audConnecting){ joinAudienceVideo(); }
+    if(s&&!s.videoLive&&(audPeer||audConnecting)){ stopAudienceVideoView(); }
+  } else if(audPeer||audConnecting){
+    stopAudienceVideoView();
+  }
 
   // The Bamboozler locking their final (third) R2/R3 answer transitions
   // the phase from 'r2_cued' (arranging) straight to 'r2' (revealing).
@@ -1670,7 +1690,7 @@ function renderAudience(s){
   // Round 1 doesn't use the video composite layout — it often has more
   // answers than fit comfortably in the bottom-third panel, so it always
   // gets the plain full-width grid regardless of whether video is live.
-  var isWideLayout=!!(s&&(s.phase==='r1'||s.phase==='final_reveal'));
+  var isWideLayout=!!(s&&(s.phase==='r1'||s.phase==='final_reveal'))||isStudioRole;
   var audMainEl=document.getElementById('aud-main');
   if(audMainEl) audMainEl.classList.toggle('tv-mode',!!(s&&s.videoLive&&!isWideLayout));
   var vidSection=document.getElementById('aud-video-section');
@@ -1864,7 +1884,7 @@ function renderAudCued(s){
 }
 
 function renderAudR1(s){
-  if(lastR1QIdx!==s.qIdx){ lastR1QIdx=s.qIdx; lastR1BuzzedBy=null; }
+  if(lastR1QIdx!==s.qIdx){ lastR1QIdx=s.qIdx; lastR1BuzzedBy=null; lastR1Resolved=false; }
   setAudHeader('Round 1 \u2014 Question '+(s.qIdx+1)+' of '+s.total,s.question);
   updateVideoLowerThird('Round 1',s.question);
 
@@ -1872,6 +1892,11 @@ function renderAudR1(s){
     playBuzzTone(s.buzzedBy);
   }
   lastR1BuzzedBy=s.buzzedBy||null;
+
+  if(s.resolved&&!lastR1Resolved){
+    playSwooshSfx();
+  }
+  lastR1Resolved=!!s.resolved;
 
   var labels=['A','B','C','D','E','F','G','H','I','J','K','L'];
   var answers=s.r1answers||[];
@@ -1895,10 +1920,14 @@ function renderAudR1(s){
 
   var statusHTML;
   if(s.resolved){
-    statusHTML='<div class="opt-cell correct" style="grid-column:1/-1;flex-direction:column;padding:28px;">'
-      +'<div style="font-size:clamp(22px,4vw,34px);font-weight:900;color:var(--gold);margin-bottom:8px;">\uD83C\uDF89 '+esc(s.buzzedBy||'')+'</div>'
-      +'<div style="font-family:Arial,sans-serif;font-size:15px;color:var(--white);">Got it right!</div>'
-      +'</div>';
+    statusHTML=s.buzzedBy
+      ?'<div class="opt-cell correct" style="grid-column:1/-1;flex-direction:column;padding:28px;">'
+        +'<div style="font-size:clamp(22px,4vw,34px);font-weight:900;color:var(--gold);margin-bottom:8px;">\uD83C\uDF89 '+esc(s.buzzedBy)+'</div>'
+        +'<div style="font-family:Arial,sans-serif;font-size:15px;color:var(--white);">Got it right!</div>'
+        +'</div>'
+      :'<div class="opt-cell correct" style="grid-column:1/-1;flex-direction:column;padding:28px;">'
+        +'<div style="font-family:Arial,sans-serif;font-size:15px;color:var(--white);">The correct answer has been revealed</div>'
+        +'</div>';
   } else if(s.buzzedBy){
     statusHTML='<div class="opt-cell shown" style="grid-column:1/-1;flex-direction:column;padding:28px;position:relative;">'
       +'<div class="lock-badge" style="position:static;transform:none;margin-bottom:14px;">Buzzed In</div>'
@@ -1918,6 +1947,7 @@ function renderAudR1(s){
   document.getElementById('aud-footer').innerHTML=s.resolved?'Round 1 result':(s.buzzedBy?'Buzzed in':'<span class="pulsing">Buzz in to answer!</span>');
 }
 var lastR1BuzzedBy=null;
+var lastR1Resolved=false;
 var lastR1QIdx=null;
 
 
@@ -1993,10 +2023,12 @@ function renderAudR4(s){
        +'<div style="background:#001800;border:3px solid #00AA00;border-radius:12px;padding:18px;text-align:center;"><div style="font-size:clamp(16px,2.5vw,26px);font-weight:900;color:#00CC44;">TRUE</div></div>'
        +'<div style="background:#1A0010;border:3px solid var(--magenta);border-radius:12px;padding:18px;text-align:center;"><div style="font-size:clamp(16px,2.5vw,26px);font-weight:900;color:var(--magenta);">BAMBOOZLE</div></div>'
        +'</div>'
-      :'<div style="background:'+(s.truthful?'#001800':'#1A0010')+';border:3px solid '+(s.truthful?'var(--gold)':'var(--magenta)')+';border-radius:14px;padding:clamp(14px,3vw,24px) clamp(18px,4vw,36px);text-align:center;width:100%;max-width:560px;">'
-       +'<div style="font-size:clamp(13px,2vw,18px);letter-spacing:3px;color:'+(s.truthful?'var(--gold)':'var(--magenta)')+';text-transform:uppercase;margin-bottom:8px;font-family:Arial,sans-serif;">'+(s.truthful?'It was TRUE!':'It was a BAMBOOZLE!')+'</div>'
+      :'<div style="text-align:center;">'
+       +'<div style="display:inline-block;font-size:clamp(30px,6vw,54px);font-weight:900;color:'+(s.truthful?'var(--gold)':'var(--magenta)')+';letter-spacing:2px;margin-bottom:14px;transform:rotate(-3deg);animation:lockPop 0.5s cubic-bezier(.34,1.56,.64,1);text-shadow:0 4px 0 rgba(0,0,0,0.4);">'+(s.truthful?'CORRECT':'BAMBOOZLE')+'</div>'
+       +'<div style="background:'+(s.truthful?'#001800':'#1A0010')+';border:3px solid '+(s.truthful?'var(--gold)':'var(--magenta)')+';border-radius:14px;padding:clamp(14px,3vw,24px) clamp(18px,4vw,36px);text-align:center;width:100%;max-width:560px;margin:0 auto;">'
+       +'<div style="font-size:clamp(13px,2vw,18px);letter-spacing:3px;color:'+(s.truthful?'var(--gold)':'var(--magenta)')+';text-transform:uppercase;margin-bottom:8px;font-family:Arial,sans-serif;">'+(s.truthful?'Delivered truthfully':'It was a bamboozle')+'</div>'
        +'<div style="font-size:clamp(15px,2.5vw,24px);color:var(--white);">'+esc(s.fullStatement)+'</div>'
-       +'</div>')
+       +'</div></div>')
     +'</div></div>';
   document.getElementById('aud-footer').innerHTML=s.revealed?(s.truthful?'\u2714 Delivered truthfully':'\u1F3AF Bamboozled!'):'True or Bamboozle?';
 }
@@ -2071,8 +2103,10 @@ function startContestantPoll(){
 function renderContestantWaiting(){
   document.getElementById('c-body').innerHTML=
     '<div style="text-align:center;padding:60px 20px;">'
-    +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:20px;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
-    +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:16px;">Hi '+esc(contestantName)+'!</p>'
+    +'<div style="font-size:clamp(28px,6vw,44px);font-weight:900;letter-spacing:3px;line-height:1;margin-bottom:0;"><span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span></div>'
+    +'<div style="margin:20px auto 0;width:80%;max-width:280px;height:4px;background:linear-gradient(90deg,transparent,var(--magenta),var(--cyan),transparent);border-radius:2px;"></div>'
+    +'<p style="margin-top:16px;font-family:Arial,sans-serif;font-size:12px;letter-spacing:3px;color:var(--muted);text-transform:uppercase;">Do you have an answer for everything?</p>'
+    +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:16px;margin-top:24px;">Hi '+esc(contestantName)+'!</p>'
     +'<p style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;margin-top:8px;">Waiting for the next question...</p>'
     +'</div>';
 }
@@ -2120,7 +2154,9 @@ function renderContestantR1(s){
       +renderContestantR1AnswerList(s)
       +(iBuzzed
         ?'<div style="background:#001800;border:1px solid var(--gold);border-radius:8px;padding:14px;text-align:center;color:var(--gold);font-family:Arial,sans-serif;font-size:15px;">You got it right! \uD83C\uDF89</div>'
-        :'<div style="background:var(--dark);border:1px solid var(--purple);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">'+esc(s.buzzedBy||'Someone')+' got it right.</div>');
+        :s.buzzedBy
+          ?'<div style="background:var(--dark);border:1px solid var(--purple);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">'+esc(s.buzzedBy)+' got it right.</div>'
+          :'<div style="background:var(--dark);border:1px solid var(--purple);border-radius:8px;padding:14px;text-align:center;color:var(--muted);font-family:Arial,sans-serif;font-size:14px;">The correct answer has been revealed.</div>');
     return;
   }
 
@@ -3037,20 +3073,42 @@ function playBuzzTone(name){
     var hash=0;
     for(var i=0;i<(name||'').length;i++){ hash=(hash*31+name.charCodeAt(i))|0; }
     hash=Math.abs(hash);
-    var freq=180+(hash%12)*35; // deterministic pitch, roughly 180-565Hz
-    var wave=(hash%2===0)?'sawtooth':'square';
+    var freq=160+(hash%14)*30; // deterministic pitch, roughly 160-580Hz
+    var waveTypes=['sawtooth','square','triangle'];
+    var wave=waveTypes[hash%waveTypes.length];
+    var detune=((hash>>3)%2===0)?1.5:0.5; // harmonic interval varies by person
+    var sweep=((hash>>5)%2===0)?1.3:0.75; // pitch sweep direction/amount varies
+    var now=ctx.currentTime;
+    var dur=0.6;
+
+    // Main oscillator — louder peak (0.7 vs the old 0.3) and a pitch sweep
+    // for a proper "buzzer" character rather than a flat tone.
     var osc=ctx.createOscillator();
     var gain=ctx.createGain();
     osc.type=wave;
-    osc.frequency.value=freq;
+    osc.frequency.setValueAtTime(freq,now);
+    osc.frequency.exponentialRampToValueAtTime(freq*sweep,now+dur);
     osc.connect(gain);
     gain.connect(ctx.destination);
-    var now=ctx.currentTime;
     gain.gain.setValueAtTime(0.0001,now);
-    gain.gain.exponentialRampToValueAtTime(0.3,now+0.02);
-    gain.gain.exponentialRampToValueAtTime(0.0001,now+0.5);
+    gain.gain.exponentialRampToValueAtTime(0.7,now+0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001,now+dur);
     osc.start(now);
-    osc.stop(now+0.55);
+    osc.stop(now+dur+0.05);
+
+    // Harmonic layer — a second voice at a person-specific interval, so
+    // different names sound distinctly different in timbre, not just pitch.
+    var osc2=ctx.createOscillator();
+    var gain2=ctx.createGain();
+    osc2.type=(wave==='square')?'sawtooth':'square';
+    osc2.frequency.setValueAtTime(freq*detune,now);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    gain2.gain.setValueAtTime(0.0001,now);
+    gain2.gain.exponentialRampToValueAtTime(0.35,now+0.02);
+    gain2.gain.exponentialRampToValueAtTime(0.0001,now+dur);
+    osc2.start(now);
+    osc2.stop(now+dur+0.05);
   }catch(e){ console.log('Buzz tone failed:',e); }
 }
 
