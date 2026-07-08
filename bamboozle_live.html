@@ -1096,13 +1096,12 @@ function doRevealCorrect(){
 // ── Producer R4 controls ───────────────────────────────────
 function r4Controls(q,qi){
   return '<div class="p-section-label">Round 4 — Q'+(qi+1)+'</div>'
-    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to a podium. They deliver it truthfully or bamboozled; the other podium guesses which.</p>'
+    +'<p style="font-family:Arial,sans-serif;font-size:13px;color:var(--muted);margin-bottom:14px;">Cue the question to send it to a podium. They deliver it truthfully or bamboozled; both podiums vocalise their answer, then reveal and award the point.</p>'
     +'<div id="r4-cue-btn" style="display:flex;gap:8px;">'
     +'<button class="p-btn-cyan" style="flex:1;" onclick="cueR4('+qi+',1)">Podium 1</button>'
     +'<button class="p-btn-cyan" style="flex:1;" onclick="cueR4('+qi+',2)">Podium 2</button>'
     +'</div>'
     +'<div id="r4-pending" style="display:none;margin-top:12px;padding:12px;background:var(--dark);border-radius:8px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted);">&#x23F3; Waiting for Bamboozler to decide...</div>'
-    +'<div id="r4-guess-status" style="display:none;margin-top:12px;padding:12px;background:var(--dark);border-radius:8px;font-family:Arial,sans-serif;font-size:13px;color:var(--muted);"></div>'
     +'<div id="r4-reveal" style="display:none;margin-top:12px;">'
     +'<button class="p-btn-gold" onclick="doR4Reveal()">&#x2605; Reveal answer</button>'
     +'</div>'
@@ -1118,14 +1117,16 @@ function r4Controls(q,qi){
 
 function cueR4(qi,podium){
   var q=questions[qi];
-  var state={phase:'r4_cued',qIdx:qi,question:q.q,correct:q.correct,total:questions.length,activePodium:podium||null,guessingPodium:podium?(3-podium):null,r4Guess:null};
+  var state={phase:'r4_cued',qIdx:qi,question:q.q,correct:q.correct,total:questions.length,activePodium:podium||null,guessingPodium:podium?(3-podium):null};
   writeStateKeepVideo(state,function(ok){
     if(!ok){alert('Could not sync. Check Supabase.');return;}
     var cueBtn=document.getElementById('r4-cue-btn');
     if(cueBtn)cueBtn.style.display='none';
     var pending=document.getElementById('r4-pending');
     if(pending)pending.style.display='block';
-    // Poll for Bamboozler submission, guess, and reveal
+    // Poll for Bamboozler's delivery decision, then the reveal. Nothing
+    // gets locked in digitally — both podiums vocalise their answers live,
+    // and the Producer judges and awards the point manually.
     if(pollTimer)clearInterval(pollTimer);
     pollTimer=setInterval(function(){
       readState(function(s){
@@ -1133,23 +1134,15 @@ function cueR4(qi,podium){
         if(s.phase==='r4'){
           var p=document.getElementById('r4-pending');
           if(p)p.style.display='none';
-          var gs=document.getElementById('r4-guess-status');
-          if(gs){
-            gs.style.display='block';
-            gs.innerHTML=s.r4Guess
-              ?'Podium '+s.guessingPodium+' guessed: <strong style="color:var(--gold);">'+(s.r4Guess==='true'?'TRUE':'BAMBOOZLE')+'</strong>'
-              :'Waiting for Podium '+s.guessingPodium+'\u2019s guess\u2026';
-          }
           var r=document.getElementById('r4-reveal');
-          if(r) r.style.display=s.r4Guess&&!s.revealed?'block':'none';
+          if(r) r.style.display=!s.revealed?'block':'none';
           if(s.revealed){
             clearInterval(pollTimer);pollTimer=null;
-            var guessCorrect=(s.r4Guess==='true')===!!s.truthful;
             var award=document.getElementById('r4-award');
             if(award){
               award.style.display='block';
               document.getElementById('r4-award-result').innerHTML=
-                'It was <strong>'+(s.truthful?'delivered truthfully':'a bamboozle')+'</strong> \u2014 Podium '+s.guessingPodium+' guessed '+(s.r4Guess==='true'?'True':'Bamboozle')+' ('+(guessCorrect?'correct':'incorrect')+')';
+                'It was <strong>'+(s.truthful?'delivered truthfully':'a bamboozle')+'</strong>. Award the point based on which podium answered correctly.';
             }
           }
         }
@@ -1642,49 +1635,27 @@ function confirmAndSubmit(){
 // R4 Bamboozler
 function renderBamboozlerR4(s){
   if(s.phase==='r4'){
-    // Delivery decision already made — this is the guess/reveal phase
-    if(myPodium===s.guessingPodium){
-      if(s.revealed){
-        var guessCorrect=(s.r4Guess==='true')===!!s.truthful;
-        document.getElementById('b-body').innerHTML=
-          '<div class="q-card">'
-          +'<div class="qlabel">Round 4 &mdash; Result</div>'
-          +'<div class="qtext">'+esc(s.fullStatement||s.statement)+'</div>'
-          +'</div>'
-          +'<div style="text-align:center;padding:20px;background:'+(guessCorrect?'#001800':'#1A0010')+';border:2px solid '+(guessCorrect?'var(--gold)':'var(--magenta)')+';border-radius:10px;">'
-          +'<div style="font-size:18px;font-weight:900;color:'+(guessCorrect?'var(--gold)':'var(--magenta)')+';">'+(guessCorrect?'You guessed right!':'You guessed wrong')+'</div>'
-          +'<div style="font-family:Arial,sans-serif;font-size:12px;color:var(--muted);margin-top:6px;">It was '+(s.truthful?'delivered truthfully':'a bamboozle')+' \u2014 you guessed '+(s.r4Guess==='true'?'True':'Bamboozle')+'</div>'
-          +'</div>';
-      } else if(s.r4Guess){
-        document.getElementById('b-body').innerHTML=
-          '<div class="q-card">'
-          +'<div class="qlabel">Round 4 &mdash; Your Guess</div>'
-          +'<div class="qtext">'+esc(s.statement||s.question)+'</div>'
-          +'</div>'
-          +'<div style="text-align:center;padding:20px;background:var(--dark);border:2px solid var(--purple);border-radius:10px;">'
-          +'<div style="font-size:16px;font-weight:900;color:var(--gold);">You guessed: '+(s.r4Guess==='true'?'TRUE':'BAMBOOZLE')+'</div>'
-          +'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:12px;margin-top:8px;">Waiting for the Producer to reveal\u2026</p>'
-          +'</div>';
-      } else {
-        document.getElementById('b-body').innerHTML=
-          '<div class="q-card">'
-          +'<div class="qlabel">Round 4 &mdash; Was it true, or a bamboozle?</div>'
-          +'<div class="qtext">'+esc(s.statement||s.question)+'</div>'
-          +'</div>'
-          +'<div style="display:flex;gap:10px;">'
-          +'<button class="reveal-btn" style="flex:1;" onclick="submitR4Guess(\'true\')">&#x2713; True</button>'
-          +'<button class="submit-btn" style="flex:1;margin-top:0;" onclick="submitR4Guess(\'bamboozle\')">&#x1F3AF; Bamboozle</button>'
-          +'</div>';
-      }
+    // Delivery decision already made. Nothing gets locked in digitally —
+    // both podiums vocalise their answers live, and the Producer judges
+    // and awards the point manually. Both screens just show the delivered
+    // statement while that plays out.
+    if(s.revealed){
+      document.getElementById('b-body').innerHTML=
+        '<div class="q-card">'
+        +'<div class="qlabel">Round 4 &mdash; Result</div>'
+        +'<div class="qtext">'+esc(s.fullStatement||s.statement)+'</div>'
+        +'</div>'
+        +'<div style="text-align:center;padding:20px;background:'+(s.truthful?'#001800':'#1A0010')+';border:2px solid '+(s.truthful?'var(--gold)':'var(--magenta)')+';border-radius:10px;">'
+        +'<div style="font-size:16px;font-weight:900;color:'+(s.truthful?'var(--gold)':'var(--magenta)')+';">It was '+(s.truthful?'delivered truthfully':'a bamboozle')+'</div>'
+        +'</div>';
     } else {
-      // The delivering podium — nothing more for them to do until reveal
       document.getElementById('b-body').innerHTML=
         '<div class="q-card">'
         +'<div class="qlabel">Round 4 &mdash; Delivered</div>'
         +'<div class="qtext">'+esc(s.statement||s.question)+'</div>'
         +'</div>'
         +'<div style="text-align:center;padding:20px;background:var(--dark);border:1px solid var(--purple);border-radius:10px;">'
-        +'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;">'+(s.r4Guess?'Waiting for the Producer to reveal\u2026':'Waiting for the other podium\u2019s guess\u2026')+'</p>'
+        +'<p class="pulsing" style="color:var(--muted);font-family:Arial,sans-serif;font-size:13px;">Waiting for the Producer to reveal\u2026</p>'
         +'</div>';
     }
     return;
@@ -1733,14 +1704,6 @@ function submitR4bamCheck(){
   var fake=document.getElementById('r4fake').value.trim();
   if(!fake)return;
   submitR4bam(false,fake);
-}
-
-function submitR4Guess(guess){
-  readState(function(s){
-    if(!s||s.phase!=='r4'||s.r4Guess) return;
-    s.r4Guess=guess;
-    writeStateKeepVideo(s,function(){ renderBamboozlerR4(s); });
-  });
 }
 
 function submitR4bam(truthful,fakeWord){
