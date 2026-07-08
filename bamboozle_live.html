@@ -263,6 +263,8 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
       <button onclick="openScoreboardPanel()" style="padding:6px 10px;background:transparent;border:1px solid var(--cyan);border-radius:6px;color:var(--cyan);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3C6; Scores</button>
       <button onclick="sendToTitles()" style="padding:6px 10px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3AC; Titles</button>
       <button onclick="sendToSting()" style="padding:6px 10px;background:transparent;border:1px solid var(--cyan);border-radius:6px;color:var(--cyan);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x26A1; Sting</button>
+      <button id="gameshow-bed-btn" onclick="toggleGameshowBed()" style="padding:6px 10px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F3B5; Tension Bed</button>
+      <button id="fun-bed-btn" onclick="toggleFunBed()" style="padding:6px 10px;background:transparent;border:1px solid var(--magenta);border-radius:6px;color:var(--magenta);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x1F389; Fun Bed</button>
       <button onclick="sendToHolding()" style="padding:6px 10px;background:transparent;border:1px solid var(--gold);border-radius:6px;color:var(--gold);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x23F8; Holding</button>
       <button onclick="hideAudienceOverlay()" style="padding:6px 10px;background:transparent;border:1px solid var(--muted);border-radius:6px;color:var(--muted);font-family:Arial,sans-serif;font-size:11px;letter-spacing:1px;cursor:pointer;white-space:nowrap;">&#x2715; Hide</button>
       <div class="p-badge" id="p-badge"></div>
@@ -327,6 +329,8 @@ html,body{height:100%;background:var(--black);color:var(--white);font-family:'Ar
   <audio id="aud-tension-audio" preload="auto"></audio>
   <audio id="aud-lockin-sfx" preload="auto"></audio>
   <audio id="aud-swoosh-sfx" preload="auto"></audio>
+  <audio id="aud-gameshow-bed" preload="auto" loop></audio>
+  <audio id="aud-fun-bed" preload="auto" loop></audio>
   <div id="aud-scoreboard" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;background:var(--black);padding:24px;">
     <div style="font-size:clamp(28px,6vw,48px);font-weight:900;letter-spacing:4px;line-height:1;text-align:center;margin-bottom:8px;">
       <span style="color:#B44FEE;">BAMB</span><span style="color:var(--gold);">O</span><span style="color:#B44FEE;">OZLE</span>
@@ -1666,6 +1670,11 @@ var audWaitDefault='<div class="logo"><span class="p">BAMB</span><span class="g"
 
 var lastAudPhaseSeen=null;
 function renderAudience(s){
+  // Manually-toggled background bed — independent of phase/round, plays
+  // underneath whatever else is showing until the Producer toggles it off.
+  if(s&&s.gameshowBedOn) startGameshowBed(); else stopGameshowBed();
+  if(s&&s.funBedOn) startFunBed(); else stopFunBed();
+
   // Connect to (or disconnect from) the Bamboozler's camera feed based on
   // the shared videoLive flag. This runs every time state changes, which
   // is exactly when videoLive would flip. Studio never connects at all —
@@ -2299,6 +2308,40 @@ function sendToSting(){
     state.phase='sting';
     writeStateKeepVideo(state,function(ok){
       console.log('Sting written:', ok);
+    });
+  });
+}
+
+var gameshowBedIsOn=false;
+function toggleGameshowBed(){
+  var btn=document.getElementById('gameshow-bed-btn');
+  readState(function(s){
+    var state=s||{phase:'idle',total:0};
+    state.gameshowBedOn=!state.gameshowBedOn;
+    gameshowBedIsOn=state.gameshowBedOn;
+    if(btn){
+      btn.style.background=gameshowBedIsOn?'var(--gold)':'transparent';
+      btn.style.color=gameshowBedIsOn?'var(--black)':'var(--gold)';
+    }
+    writeStateKeepVideo(state,function(ok){
+      console.log('Gameshow bed toggled:', ok, gameshowBedIsOn);
+    });
+  });
+}
+
+var funBedIsOn=false;
+function toggleFunBed(){
+  var btn=document.getElementById('fun-bed-btn');
+  readState(function(s){
+    var state=s||{phase:'idle',total:0};
+    state.funBedOn=!state.funBedOn;
+    funBedIsOn=state.funBedOn;
+    if(btn){
+      btn.style.background=funBedIsOn?'var(--magenta)':'transparent';
+      btn.style.color=funBedIsOn?'var(--white)':'var(--magenta)';
+    }
+    writeStateKeepVideo(state,function(ok){
+      console.log('Fun bed toggled:', ok, funBedIsOn);
     });
   });
 }
@@ -2990,6 +3033,50 @@ function stopTensionBed(){
   if(a) a.pause();
 }
 
+// ── Manually-toggled background tension bed (separate from the timer-
+// tied one) — plays on a loop until the Producer presses the button again.
+var gameshowBedActive=false;
+function startGameshowBed(){
+  if(gameshowBedActive) return;
+  gameshowBedActive=true;
+  var a=document.getElementById('aud-gameshow-bed');
+  if(!a) return;
+  a.loop=true;
+  if(!a.getAttribute('src')){
+    a.setAttribute('src','Gameshow_Background_Tension.mp3');
+  } else {
+    try{ a.currentTime=0; }catch(e){}
+  }
+  a.play().catch(function(err){ console.log('Gameshow bed play() failed:',err); });
+}
+function stopGameshowBed(){
+  if(!gameshowBedActive) return;
+  gameshowBedActive=false;
+  var a=document.getElementById('aud-gameshow-bed');
+  if(a) a.pause();
+}
+
+var funBedActive=false;
+function startFunBed(){
+  if(funBedActive) return;
+  funBedActive=true;
+  var a=document.getElementById('aud-fun-bed');
+  if(!a) return;
+  a.loop=true;
+  if(!a.getAttribute('src')){
+    a.setAttribute('src','TRL0221_01_4_FUN_UNDERSCORE.MP3');
+  } else {
+    try{ a.currentTime=0; }catch(e){}
+  }
+  a.play().catch(function(err){ console.log('Fun bed play() failed:',err); });
+}
+function stopFunBed(){
+  if(!funBedActive) return;
+  funBedActive=false;
+  var a=document.getElementById('aud-fun-bed');
+  if(a) a.pause();
+}
+
 // One-shot "locked in" sound effect, played the moment the Bamboozler
 // locks their final (third) R2/R3 answer.
 function playLockInSfx(){
@@ -3036,13 +3123,15 @@ function warmUpBuzzAudio(){
   // is what autoplay policy exists to stop. Doing one real (if near-silent)
   // play+pause of each during this join tap satisfies that requirement for
   // every later gesture-free .play() call on the same element.
-  ['aud-tension-audio','aud-lockin-sfx','aud-swoosh-sfx'].forEach(function(id){
+  ['aud-tension-audio','aud-lockin-sfx','aud-swoosh-sfx','aud-gameshow-bed','aud-fun-bed'].forEach(function(id){
     var el=document.getElementById(id);
     if(!el) return;
     var srcMap={
       'aud-tension-audio':'Bamboozle%20Loopable%20thinking%20tension-.mp3',
       'aud-lockin-sfx':'Bamboozle%20Lock%20In%20Sound%20Effect.mp3',
-      'aud-swoosh-sfx':'Bamboozle%20SWOOSH.mp3'
+      'aud-swoosh-sfx':'Bamboozle%20SWOOSH.mp3',
+      'aud-gameshow-bed':'Gameshow_Background_Tension.mp3',
+      'aud-fun-bed':'TRL0221_01_4_FUN_UNDERSCORE.MP3'
     };
     if(!el.getAttribute('src')) el.setAttribute('src',srcMap[id]);
     var p=el.play();
