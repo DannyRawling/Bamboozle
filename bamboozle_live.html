@@ -413,6 +413,7 @@ var webrtcPollTimer=null;         // dedicated poll loop for signaling (separate
 // ── State ──────────────────────────────────────────────────
 var role=null, sessionCode=null;
 var isStudioRole=false;
+var lastVideoLivePodium=null;
 var lastTitlesTriggeredAt=null;
 var lastStingTriggeredAt=null;
 var myPodium=1;
@@ -1843,6 +1844,14 @@ function renderAudience(s){
   // is exactly when videoLive would flip. Studio never connects at all —
   // it's meant to be a plain, video-free overflow/thinking-time screen.
   if(!isStudioRole){
+    // If the streaming podium switched (e.g. Podium 1 -> Podium 2) while
+    // videoLive stayed true the whole time, our existing connection is
+    // still pointed at the old podium and won't reconnect on its own —
+    // force a fresh reconnect so we actually pick up the new podium's feed.
+    if(s&&s.videoLive&&s.videoLivePodium&&lastVideoLivePodium&&s.videoLivePodium!==lastVideoLivePodium&&(audPeer||audConnecting)){
+      stopAudienceVideoView();
+    }
+    lastVideoLivePodium=s?s.videoLivePodium:null;
     if(s&&s.videoLive&&!audPeer&&!audConnecting){ joinAudienceVideo(); }
     if(s&&!s.videoLive&&(audPeer||audConnecting)){ stopAudienceVideoView(); }
   } else if(audPeer||audConnecting){
@@ -3226,7 +3235,7 @@ function startTensionBed(){
   if(!a) return;
   a.loop=true;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','Gameshow_Background_Tension.mp3');
+    a.setAttribute('src','Gameshow%20Background%20Tension.mp3');
   } else {
     try{ a.currentTime=0; }catch(e){} // restart from the beginning — avoid load(), which re-fetches the resource and can reset the autoplay-unlock from the join gesture
   }
@@ -3249,7 +3258,7 @@ function startGameshowBed(){
   if(!a) return;
   a.loop=true;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','Gameshow_Background_Tension.mp3');
+    a.setAttribute('src','Gameshow%20Background%20Tension.mp3');
   } else {
     try{ a.currentTime=0; }catch(e){}
   }
@@ -3270,7 +3279,7 @@ function startFunBed(){
   if(!a) return;
   a.loop=true;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','TRL0221_01_4_FUN_UNDERSCORE.MP3');
+    a.setAttribute('src','TRL0221%2001%204%20FUN%20UNDERSCORE.MP3');
   } else {
     try{ a.currentTime=0; }catch(e){}
   }
@@ -3317,7 +3326,7 @@ function playCorrectSfx(){
   var a=document.getElementById('aud-correct-sfx');
   if(!a) return;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','IMP_Correct_shortened.wav');
+    a.setAttribute('src','IMP%20Correct%20shortened.wav');
     a.play().catch(function(err){ console.log('Correct SFX play() failed:',err); });
   } else {
     try{ a.currentTime=0; }catch(e){}
@@ -3330,7 +3339,7 @@ function playIncorrectSfx(){
   var a=document.getElementById('aud-incorrect-sfx');
   if(!a) return;
   if(!a.getAttribute('src')){
-    a.setAttribute('src','IMP_Incorrect_shortened.wav');
+    a.setAttribute('src','IMP%20Incorrect%20shortened.wav');
     a.play().catch(function(err){ console.log('Incorrect SFX play() failed:',err); });
   } else {
     try{ a.currentTime=0; }catch(e){}
@@ -3360,13 +3369,13 @@ function warmUpBuzzAudio(){
     var el=document.getElementById(id);
     if(!el) return;
     var srcMap={
-      'aud-tension-audio':'Gameshow_Background_Tension.mp3',
+      'aud-tension-audio':'Gameshow%20Background%20Tension.mp3',
       'aud-lockin-sfx':'Bamboozle%20Lock%20In%20Sound%20Effect.mp3',
       'aud-swoosh-sfx':'Bamboozle%20SWOOSH.mp3',
-      'aud-gameshow-bed':'Gameshow_Background_Tension.mp3',
-      'aud-fun-bed':'TRL0221_01_4_FUN_UNDERSCORE.MP3',
-      'aud-correct-sfx':'IMP_Correct_shortened.wav',
-      'aud-incorrect-sfx':'IMP_Incorrect_shortened.wav'
+      'aud-gameshow-bed':'Gameshow%20Background%20Tension.mp3',
+      'aud-fun-bed':'TRL0221%2001%204%20FUN%20UNDERSCORE.MP3',
+      'aud-correct-sfx':'IMP%20Correct%20shortened.wav',
+      'aud-incorrect-sfx':'IMP%20Incorrect%20shortened.wav'
     };
     if(!el.getAttribute('src')) el.setAttribute('src',srcMap[id]);
     var wasMuted=el.muted;
