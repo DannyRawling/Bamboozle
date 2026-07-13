@@ -561,7 +561,6 @@ function buildQuestions(qIdx,aIdx,rIdx,r1Idx,rFilter){
 function detectMode(v){
   v=v.toLowerCase();
   if(v.indexOf('final')!==-1||v.indexOf('jackpot')!==-1)return'final';
-  if(v.indexOf('round 1')!==-1||v.indexOf('round1')!==-1||v.indexOf('pass the bam')!==-1)return'r1';
   if(v.indexOf('round 4')!==-1||v.indexOf('round4')!==-1||v.indexOf('round four')!==-1||v.indexOf('face to face')!==-1)return'r4';
   if(v.indexOf('round 3')!==-1||v.indexOf('round3')!==-1||v.indexOf('round three')!==-1||v.indexOf('pairs')!==-1)return'r3';
   return'r2';
